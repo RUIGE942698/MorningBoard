@@ -6,6 +6,8 @@
 
 装机一次，它每晚 20:00 自动更新、自动弹出；电脑关机错过会自动补跑。想要"晚上吃完饭扫一眼今天发生了什么、学了什么"——这就是给你的那扇窗。
 
+> **🇬🇧 In English** — **MorningBoard** is a Windows desktop *daily briefing* app. After the CCTV evening news airs (19:00 daily), it auto-collects and pops up a one-screen, scrollable dashboard: tonight's CCTV news program, top tech headlines (InfoQ / IT 之家 / 量子位 / 掘金), your watched funds' NAV + mini trend charts, an AI-written daily lesson, a thinking & expression exercise, a term dictionary (incl. MCP / RAG / AI agent / embodied AI), and a weekly recap. Pure Python stdlib + tkinter, no third-party deps, optional DeepSeek AI, one-click Windows install. *(Note: the UI and all content are Chinese-oriented.)*
+
 ---
 
 ## ✨ 特点
