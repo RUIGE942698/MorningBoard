@@ -1,0 +1,25 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# --- 运行时生成，不入库 ---
+cache/
+cache/*
+!cache/.gitkeep
+*.lnk
+task_*.xml
+*.zip
+
+# --- 本地备份 / 打包产物 ---
+MorningBoard_Share_dev_backup.zip
+MorningBoard_*_一键安装.zip
+
+# --- 编辑器 / 系统 ---
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

@@ -1,0 +1,21 @@
+{
+  "indices": [
+    {"secid": "1.000001", "name": "上证指数"},
+    {"secid": "0.399001", "name": "深证成指"},
+    {"secid": "0.399006", "name": "创业板指"},
+    {"secid": "1.000300", "name": "沪深300"},
+    {"secid": "1.000688", "name": "科创50"},
+    {"secid": "hkHSI", "name": "恒生指数"},
+    {"secid": "usIXIC", "name": "纳斯达克"},
+    {"secid": "usDJI", "name": "道琼斯"}
+  ],
+  "funds": ["161725", "003095", "005827", "110020", "000001"],
+  "news_max_items": 30,
+  "ai": {
+    "enabled": true,
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "model": "deepseek-chat",
+    "base_url": "https://api.deepseek.com",
+    "timeout_seconds": 60
+  }
+}
