@@ -29,7 +29,19 @@
 
 ## 🖼 预览
 
-> *（可在本目录放入 `docs/screenshot-news.png`、`docs/screenshot-funds.png` 等截图，README 会自动展示；也可双击 `morning_show.py` 本地运行查看。）*
+**📰 新闻联播** —— 当晚央视《新闻联播》完整节目单，按 时政/国内/国际/财经科技/快讯 分组，头条高亮 + 分类统计
+
+![新闻联播](docs/screenshot-news.png)
+
+**📚 每日一课** —— 13 类知识轮换，每日主课 + 金句 + 小卡 + 可点名词延伸学习（配置 DeepSeek API 后为 AI 每日生成）
+
+![每日一课](docs/screenshot-lesson.png)
+
+**🧠 思辨训练** —— 今日思维工具 + 论证对垒思辨题 + 谬误雷达
+
+![思辨训练](docs/screenshot-thinking.png)
+
+> 界面为 tkinter 圆角卡片风格：莫兰迪配色、悬停高亮、涨红跌绿、可滚动。
 
 ---
 
