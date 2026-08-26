@@ -64,12 +64,31 @@ def append_terms(domain, items):
     return len(added)
 
 
+def _domain_titles(domain):
+    """该领域已有术语标题列表（用于 AI 防重复）。"""
+    try:
+        files = os.listdir(_terms_dir())
+    except OSError:
+        return []
+    for f in files:
+        if not f.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(_terms_dir(), f), encoding="utf-8") as fp:
+                data = json.load(fp)
+        except Exception:  # noqa: BLE001
+            continue
+        if data.get("domain") == domain:
+            return [it.get("t", "") for it in data.get("items", []) if it.get("t")]
+    return []
+
+
 def expand_domains(domains, count=3):
     """为给定领域列表各生成并追加 count 条术语。返回 [(domain, 新增数), ...]。"""
     results = []
     for domain in domains:
         try:
-            items = ai_gen.generate_terms(domain, count)
+            items = ai_gen.generate_terms(domain, count, exclude=_domain_titles(domain))
             n = append_terms(domain, items or [])
             results.append((domain, n))
         except Exception:  # noqa: BLE001

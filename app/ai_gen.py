@@ -104,14 +104,21 @@ def _extract_json(text):
     return None
 
 
-def generate_lesson(main_cat=None):
-    """生成每日一课主课。返回 {t,s,b:[...],links:[...]} 或 None。"""
+def generate_lesson(main_cat=None, recent_topics=None):
+    """生成每日一课主课。返回 {t,s,b:[...],links:[...]} 或 None。
+
+    recent_topics：最近已生成过的主题列表（用于防重复）。
+    """
     cat_hint = ("，主题结合「{0}」分类" if main_cat else "，主题从中国科技与社会热点中选取").format(main_cat or "")
+    avoid = ""
+    if recent_topics:
+        avoid = "以下主题最近已经生成过，请务必不要重复（可同类但换全新角度）：{0}\n".format("、".join(recent_topics[:20]))
     prompt = (
         "你是 MorningBoard 每日学习栏目的资深内容编辑。请写一节 5 分钟能读完的「每日一课」"
         + cat_hint
         + "。要求：内容有真实深度、观点新颖、避免陈词滥调，适合普通读者。\n"
-        "严格只输出一个 JSON 对象（不要任何其他文字、不要 markdown 围栏）：\n"
+        + avoid
+        + "严格只输出一个 JSON 对象（不要任何其他文字、不要 markdown 围栏）：\n"
         '{"t":"标题（含冒号副标题更佳）","s":"一句话概括（25字内）",'
         '"b":["第1段：核心概念解释（约80字）","第2段：为什么重要/背景（约80字）",'
         '"第3段：深度展开或独特视角（约100字）","第4段：今日可实践的一句话行动（约40字）"],'
@@ -152,13 +159,20 @@ def generate_expression():
     return _extract_json(_chat(prompt, max_tokens=1500))
 
 
-def generate_terms(domain, count=3):
-    """生成某领域的新术语（术语词典扩充）。返回 [{t,s,b,links}] 或 None。"""
+def generate_terms(domain, count=3, exclude=None):
+    """生成某领域的新术语（术语词典扩充）。返回 [{t,s,b,links}] 或 None。
+
+    exclude：词典中已存在的术语标题（用于防重复，减少生成浪费）。
+    """
+    avoid = ""
+    if exclude:
+        avoid = "以下术语已存在于词典，请务必不要重复（可同类但换全新表述）：{0}\n".format("、".join(exclude[:40]))
     header = (
         "你是专业术语编辑。请为领域「{0}」编写 {1} 个该领域重要且实用的专业术语"
         "（普通人值得知道、但词典里可能还没有的），要求真实、准确、有实质内容，避免过于浅显。\n"
-        "严格只输出一个 JSON 数组（不要任何其他文字、不要 markdown 围栏）：\n".format(domain, count)
-    )
+        + avoid
+        + "严格只输出一个 JSON 数组（不要任何其他文字、不要 markdown 围栏）：\n"
+    ).format(domain, count)
     json_tpl = (
         '[{"t":"术语名","s":"一句话定义（25字内）",'
         '"b":["第1段：是什么（约80字）","第2段：为什么重要（约80字）","第3段：常见误区或要点（约60字）"],'

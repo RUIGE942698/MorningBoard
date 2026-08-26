@@ -5,6 +5,7 @@
 """
 import datetime as dt
 import email.utils
+import html
 import json
 import re
 import ssl
@@ -327,18 +328,65 @@ def fetch_qbitai_week(days=7, limit=10):
                 age = 0
             if age > days:
                 continue
-            desc = re.sub(r"<[^>]+>", " ", m_d.group(1)) if m_d else ""
+            desc = html.unescape(m_d.group(1)) if m_d else ""
+            desc = re.sub(r"<[^>]+>", " ", desc)
+            desc = desc.replace(">", " ").replace("<", " ")
+            desc = re.sub(r"\s+", " ", desc).strip()
+            desc = desc.replace("点击查看原文", "").strip(" ><")
             out.append(
                 {
-                    "title": m_t.group(1).strip(),
+                    "title": html.unescape(m_t.group(1)).strip(),
                     "url": m_l.group(1).strip(),
                     "date": pd.strftime("%m-%d"),
                     "desc": desc.strip()[:110],
                 }
             )
-        return out[:limit]
+        # 摘要增强：RSS 摘要太短的，点进原文抓简介（meta description / 正文首段）
+        result = out[:limit]
+        enriched = 0
+        for it in result:
+            if enriched >= 6:
+                break
+            if len(it.get("desc") or "") < 25 and it.get("url"):
+                s = _fetch_summary(it["url"])
+                if s:
+                    it["desc"] = s
+                    enriched += 1
+        return result
     except Exception:  # noqa: BLE001
         return []
+
+
+def _fetch_summary(url, max_len=140):
+    """抓取文章页简介：优先 meta description / og:description，其次正文首段。
+
+    过滤过短、拼音、广告性（关注/扫码）等无意义文本。
+    """
+    try:
+        st, body = http_get(url)
+        t = body.decode("utf-8", "ignore")
+        for mm in re.finditer(r"<meta[^>]+>", t, re.I):
+            tag = mm.group(0)
+            if re.search(r'(?:name|property)\s*=\s*["\'](?:description|og:description)["\']', tag, re.I):
+                c = re.search(r'content\s*=\s*["\']([^"\']+)["\']', tag, re.I)
+                if c:
+                    d = html.unescape(c.group(1)).strip()
+                    if len(d) >= 20 and "关注" not in d and "扫码" not in d:
+                        return d[:max_len]
+        for m in re.finditer(r"<p[^>]*>(.*?)</p>", t, re.S):
+            txt = re.sub(r"<[^>]+>", " ", m.group(1))
+            txt = html.unescape(re.sub(r"\s+", " ", txt)).strip()
+            if (
+                len(txt) >= 30
+                and re.search(r"[\u4e00-\u9fff]", txt)
+                and "扫码" not in txt
+                and "关注" not in txt
+                and "点击" not in txt
+            ):
+                return txt[:max_len]
+    except Exception:  # noqa: BLE001
+        pass
+    return ""
 
 
 def _rss_entries(body, days=7, limit=10):
@@ -363,10 +411,14 @@ def _rss_entries(body, days=7, limit=10):
             age = 0
         if age > days:
             continue
-        desc = re.sub(r"<[^>]+>", " ", m_d.group(1)) if m_d else ""
+        desc = html.unescape(m_d.group(1)) if m_d else ""
+        desc = re.sub(r"<[^>]+>", " ", desc)
+        desc = desc.replace(">", " ").replace("<", " ")
+        desc = re.sub(r"\s+", " ", desc).strip()
+        desc = desc.replace("点击查看原文", "").strip(" ><")
         out.append(
             {
-                "title": m_t.group(1).strip(),
+                "title": html.unescape(m_t.group(1)).strip(),
                 "url": m_l.group(1).strip(),
                 "date": pd.strftime("%m-%d"),
                 "desc": desc.strip()[:110],

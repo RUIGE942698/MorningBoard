@@ -1,10 +1,41 @@
 # -*- coding: utf-8 -*-
 """每日晨报生成：抓取 -> 汇总 -> 写缓存 cache/today.json。"""
 import datetime as dt
+import hashlib
 import json
 import os
 
 from . import ai_gen, config, fetch, knowledge
+
+
+def _content_hash(lesson):
+    """主课内容指纹（标题+正文）。"""
+    if not lesson:
+        return ""
+    body = "".join(lesson.get("body") or [])
+    return hashlib.md5(((lesson.get("title") or "") + body).encode("utf-8")).hexdigest()
+
+
+def _recent_lesson_topics(days=7):
+    """最近 N 天归档的主课标题（用于 AI 生成防重复）。"""
+    out = []
+    try:
+        hist_dir = os.path.join(config.CACHE_DIR, "history")
+        files = sorted(os.listdir(hist_dir), reverse=True)[:days] if os.path.isdir(hist_dir) else []
+        for f in files:
+            if not f.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(hist_dir, f), encoding="utf-8") as fp:
+                    data = json.load(fp)
+                title = ((data.get("lesson") or {}).get("title") or "").strip()
+                if title:
+                    out.append(title)
+            except Exception:  # noqa: BLE001
+                pass
+    except OSError:
+        pass
+    return out
 
 # 每周总结的六个主题（按优先级匹配）
 WEEKLY_CATS = [
@@ -195,7 +226,10 @@ def generate_today(force=False):
     ai_expression = None
     if ai_gen.enabled():
         try:
-            ai_main = ai_gen.generate_lesson(main_cat=lesson.get("main_cat"))
+            ai_main = ai_gen.generate_lesson(
+                main_cat=lesson.get("main_cat"),
+                recent_topics=_recent_lesson_topics(days=7),
+            )
             if ai_main and isinstance(ai_main, dict) and ai_main.get("t"):
                 # AI 返回 t/s/b/links，映射为 GUI 主课渲染结构 title/sub/body
                 lesson["main"] = {
@@ -284,7 +318,27 @@ def generate_today(force=False):
                 {"name": it.get("name", ""), "price": it.get("price"), "pct": it.get("pct")}
                 for it in (_funds.get("indices") or [])
             ],
+            "dedup": None,
         }
+        # 归档去重：与最近 7 天历史对比主课指纹，重复则标注来源（档案照常保存，不丢内容）
+        try:
+            new_hash = _content_hash(_lesson.get("main"))
+            if new_hash:
+                recent_files = sorted(
+                    (f for f in os.listdir(hist_dir) if f.endswith(".json") and f != today_iso + ".json"),
+                    reverse=True,
+                )[:7]
+                for f in recent_files:
+                    try:
+                        with open(os.path.join(hist_dir, f), encoding="utf-8") as fp:
+                            old = json.load(fp)
+                    except Exception:  # noqa: BLE001
+                        continue
+                    if _content_hash(old.get("lesson")) == new_hash:
+                        archive["dedup"] = "内容与 {0} 重复".format(f[:10])
+                        break
+        except Exception:  # noqa: BLE001
+            pass
         with open(os.path.join(hist_dir, today_iso + ".json"), "w", encoding="utf-8") as f:
             json.dump(archive, f, ensure_ascii=False, indent=1)
     except Exception:  # noqa: BLE001

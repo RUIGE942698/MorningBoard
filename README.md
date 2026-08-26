@@ -108,6 +108,17 @@ MorningBoard/
 ├── config.json           自选基金、指数、新闻条数、AI 配置
 ├── knowledge/            知识库（13 类 + 术语 + 金句，可自行增删条目）
 ├── app/                  核心代码（抓取/生成/GUI）
+│   ├── config.py            配置
+│   ├── fetch.py             多源抓取（联播/科技/基金/指数）
+│   ├── generate.py          生成当日汇总
+│   ├── knowledge.py         知识库加载
+│   ├── ai_gen.py            DeepSeek AI 每日生成
+│   ├── terms_updater.py     术语库/AI 扩充
+│   └── ui/                  界面（模块化拆分）
+│       ├── theme.py         配色/字体/常量
+│       ├── widgets.py       通用控件（圆角卡片/滚动/迷你走势图）
+│       ├── app.py           MorningApp 主类（组合各标签页）
+│       └── tabs/            各标签页模块（news/funds/lesson/thinking/expression/weekly/terms/history）
 ├── cache/                生成缓存（运行时生成，不入库）
 ├── 一键安装.bat           双击即装（推荐）：检测 Python + 注册每晚任务 + 建桌面快捷方式
 ├── install_autostart.ps1 安装引擎（被 一键安装.bat 调用）
