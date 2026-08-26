@@ -501,8 +501,11 @@ TECH_FEEDS = [
 ]
 
 
-def fetch_tech_feeds(limit_each=4):
-    """聚合科技前沿：按优先级抓取多源，失败源自动跳过，条目标注 source。"""
+def fetch_tech_feeds(limit_each=4, enrich_limit=8):
+    """聚合科技前沿：按优先级抓取多源，失败源自动跳过，条目标注 source。
+
+    对 desc 为空 / 过短的条目再抓一次原文摘要补齐，保证每条都有统一的“日期+简介”，版面整齐。
+    """
     items = []
     for name, fn, kw in TECH_FEEDS:
         try:
@@ -515,6 +518,15 @@ def fetch_tech_feeds(limit_each=4):
             item = dict(it)
             item["source"] = name
             items.append(item)
+    enriched = 0
+    for it in items:
+        if enriched >= enrich_limit:
+            break
+        if len(it.get("desc") or "") < 20 and it.get("url"):
+            s = _fetch_summary(it["url"])
+            if s:
+                it["desc"] = s
+                enriched += 1
     return items
 
 
