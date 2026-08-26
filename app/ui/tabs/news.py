@@ -138,7 +138,7 @@ class NewsTabMixin:
                 )
                 if it.get("desc"):
                     tk.Label(
-                        row, text="📅 {0}  {1}".format(it.get("date", ""), it.get("desc", "")),
+                        row, text="📅 {0}  {1}".format(it.get("date", ""), fetch._clean_text(it.get("desc", ""))),
                         font=F_TINY, bg=CARD, fg=SUB, anchor="w", justify="left", wraplength=920,
                     ).grid(row=1, column=0, sticky="we", pady=(1, 0))
                 self._fit(rc, 44)

@@ -24,6 +24,21 @@ def http_get(url, timeout=12, referer=None):
         return r.status, r.read()
 
 
+def _clean_text(s, max_len=110):
+    """HTML 转义还原 + 去标签 + 压缩空白，防止 RSS / 网页抓取的原始 HTML 泄漏到界面。
+
+    依次处理：实体还原(&lt;&gt;&quot;&#39;&amp; 等)→ 去除标签 → 兜底清残余实体 → 压缩空白。
+    """
+    if not s:
+        return ""
+    s = html.unescape(str(s))
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"&#?\w+;", " ", s)          # 兜底：残余 HTML 实体（如 &#39; &nbsp;）
+    s = re.sub(r"\s+", " ", s).strip()
+    s = s.replace("点击查看原文", "").replace("阅读原文", "").strip(" ><")
+    return s[:max_len]
+
+
 def _num(v):
     """容错数值转换：空/异常返回 '-'。"""
     if v in (None, "", "-"):
@@ -328,17 +343,13 @@ def fetch_qbitai_week(days=7, limit=10):
                 age = 0
             if age > days:
                 continue
-            desc = html.unescape(m_d.group(1)) if m_d else ""
-            desc = re.sub(r"<[^>]+>", " ", desc)
-            desc = desc.replace(">", " ").replace("<", " ")
-            desc = re.sub(r"\s+", " ", desc).strip()
-            desc = desc.replace("点击查看原文", "").strip(" ><")
+            desc = _clean_text(m_d.group(1)) if m_d else ""
             out.append(
                 {
-                    "title": html.unescape(m_t.group(1)).strip(),
+                    "title": _clean_text(m_t.group(1), 200),
                     "url": m_l.group(1).strip(),
                     "date": pd.strftime("%m-%d"),
-                    "desc": desc.strip()[:110],
+                    "desc": desc,
                 }
             )
         # 摘要增强：RSS 摘要太短的，点进原文抓简介（meta description / 正文首段）
@@ -372,7 +383,7 @@ def _fetch_summary(url, max_len=140):
                 if c:
                     d = html.unescape(c.group(1)).strip()
                     if len(d) >= 20 and "关注" not in d and "扫码" not in d:
-                        return d[:max_len]
+                        return _clean_text(d, max_len)
         for m in re.finditer(r"<p[^>]*>(.*?)</p>", t, re.S):
             txt = re.sub(r"<[^>]+>", " ", m.group(1))
             txt = html.unescape(re.sub(r"\s+", " ", txt)).strip()
@@ -383,7 +394,7 @@ def _fetch_summary(url, max_len=140):
                 and "关注" not in txt
                 and "点击" not in txt
             ):
-                return txt[:max_len]
+                return _clean_text(txt, max_len)
     except Exception:  # noqa: BLE001
         pass
     return ""
@@ -411,17 +422,13 @@ def _rss_entries(body, days=7, limit=10):
             age = 0
         if age > days:
             continue
-        desc = html.unescape(m_d.group(1)) if m_d else ""
-        desc = re.sub(r"<[^>]+>", " ", desc)
-        desc = desc.replace(">", " ").replace("<", " ")
-        desc = re.sub(r"\s+", " ", desc).strip()
-        desc = desc.replace("点击查看原文", "").strip(" ><")
+        desc = _clean_text(m_d.group(1)) if m_d else ""
         out.append(
             {
-                "title": html.unescape(m_t.group(1)).strip(),
+                "title": _clean_text(m_t.group(1), 200),
                 "url": m_l.group(1).strip(),
                 "date": pd.strftime("%m-%d"),
-                "desc": desc.strip()[:110],
+                "desc": desc,
             }
         )
     return out[:limit]
@@ -475,7 +482,7 @@ def fetch_juejin_hot(limit=5):
                     "title": t,
                     "url": "https://juejin.cn/post/{0}".format(art.get("article_id", "")),
                     "date": dt.date.today().strftime("%m-%d"),
-                    "desc": (art.get("brief_content") or "").strip()[:110],
+                    "desc": _clean_text(art.get("brief_content"), 110),
                 }
             )
             if len(out) >= limit:
