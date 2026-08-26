@@ -55,7 +55,7 @@
 手动等效命令（供排查）：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\install_autostart.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install_autostart.ps1
 ```
 
 安装后立即验证：双击桌面「每日播报」，或运行：
@@ -121,10 +121,11 @@ MorningBoard/
 │       └── tabs/            各标签页模块（news/funds/lesson/thinking/expression/weekly/terms/history）
 ├── cache/                生成缓存（运行时生成，不入库）
 ├── 一键安装.bat           双击即装（推荐）：检测 Python + 注册每晚任务 + 建桌面快捷方式
-├── install_autostart.ps1 安装引擎（被 一键安装.bat 调用）
-├── uninstall_autostart.ps1 卸载
-├── make_share.ps1        一键打包「分享版」zip（不含个人缓存）
-└── run_now.bat           手动弹出一次
+├── scripts/              工具脚本
+│   ├── install_autostart.ps1 安装引擎（被 一键安装.bat 调用）
+│   ├── uninstall_autostart.ps1 卸载
+│   ├── make_share.ps1        一键打包「分享版」zip（不含个人缓存）
+│   └── run_now.bat           手动弹出一次
 ```
 
 ---
@@ -151,7 +152,7 @@ MorningBoard/
 
 - **晚上没弹窗**：`schtasks /Query /TN MorningBoard-Generate`，或双击桌面快捷方式看报错。
 - **想看昨天的**：双击桌面快捷方式（显示缓存，过期会后台自动刷新）。
-- **换了 Python**：重跑 `install_autostart.ps1`，或用 `-PythonPath C:\你的\python.exe` 指定。
+- **换了 Python**：重跑 `scripts\install_autostart.ps1`，或用 `-PythonPath C:\你的\python.exe` 指定。
 - **新闻为空**：联播每天 19:00 播出，早间自动回退前一晚；连续为空多半是央视网改版，提 issue 即可。
 - **指数/基金为空**：已内置东财→腾讯→新浪三重备援；全失败会显示原因并保留旧数据，不白屏。
 - **中文乱码**：所有文件统一 UTF-8，勿用记事本"另存为 ANSI"。

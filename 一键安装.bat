@@ -12,7 +12,7 @@ echo.
 echo  Launching installer, please wait...
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install_autostart.ps1"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\install_autostart.ps1"
 set "RC=%ERRORLEVEL%"
 
 echo.

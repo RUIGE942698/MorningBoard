@@ -19,9 +19,10 @@ try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
-$Dir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$EveningScript = Join-Path $Dir "morning_evening.py"
-$ShowScript    = Join-Path $Dir "morning_show.py"
+$Dir = Split-Path -Parent $MyInvocation.MyCommand.Path      # 本脚本目录(scripts/)
+$Root = Split-Path -Parent $Dir                              # 项目根目录( MorningBoard_Share )
+$EveningScript = Join-Path $Root "morning_evening.py"
+$ShowScript    = Join-Path $Root "morning_show.py"
 
 function Write-Step([string]$msg) { Write-Host ("  " + $msg) }
 
@@ -138,18 +139,18 @@ if (Test-Path $oldLauncher) {
 
 # ---- 4. 创建快捷方式（桌面 + 包文件夹） ----
 Write-Host "[3/4] 创建快捷方式『每日播报』..."
-$ico = Join-Path $Dir "tools\csgo_bg.ico"
+$ico = Join-Path $Root "tools\csgo_bg.ico"
 $ws = New-Object -ComObject WScript.Shell
 $lnkTargets = @(
     (Join-Path ([Environment]::GetFolderPath('Desktop')) "每日播报.lnk"),
-    (Join-Path $Dir "打开每日播报.lnk")
+    (Join-Path $Root "打开每日播报.lnk")
 )
 foreach ($lnkPath in $lnkTargets) {
     try {
         $lnk = $ws.CreateShortcut($lnkPath)
         $lnk.TargetPath = $PyW
         $lnk.Arguments = ('"' + $ShowScript + '"')
-        $lnk.WorkingDirectory = $Dir
+        $lnk.WorkingDirectory = $Root
         if (Test-Path $ico) { $lnk.IconLocation = ("{0},0" -f $ico) }
         $lnk.Description = "每日播报 MorningBoard"
         $lnk.Save()
