@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 
-from . import ai_gen, config, fetch, knowledge
+from . import ai_gen, config, dedup, fetch, knowledge
 
 
 def _content_hash(lesson):
@@ -108,6 +108,67 @@ def log_run(msg):
                 f.writelines(lines[-200:])
     except Exception:  # noqa: BLE001
         pass
+
+
+def _remember_current_ai():
+    """把当前缓存里已有的 AI 内容标题登记进查重池。
+
+    generate_today 会用新内容覆盖 cache/today.json 和当日归档，
+    不先登记的话，同一天内重跑时上一版内容从没进过池子，查重形同虚设
+    （实测踩过：20:00 重跑把 19:53 那版主课覆盖后，新主课与它 75% 相似却没被拦下）。
+    """
+    c = _load_cache()
+    if not c:
+        return
+    try:
+        for it in ((c.get("thinking") or {}).get("items") or []):
+            if isinstance(it, dict) and it.get("t"):
+                dedup.record("thinking", [it["t"]])
+        ex = c.get("expression")
+        if isinstance(ex, dict) and ex.get("t"):
+            dedup.record("expression", [ex["t"]])
+        lesson = c.get("lesson") or {}
+        main = lesson.get("main")
+        if isinstance(main, dict) and main.get("title") and lesson.get("ai_generated"):
+            dedup.record("lesson", [main["title"]])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _ai_dedup_gen(kind, fn, tries=3, retry=2, extra_avoid=None):
+    """带查重的 AI 生成：撞题就重出，最多 tries 轮。
+
+    kind: "lesson" / "thinking" / "expression"
+    fn:   ai_gen.generate_xxx，需接受 recent_topics 关键字
+    返回 (结果, 轮数, 查重备注)；备注为 None 表示一次通过、无撞题。
+    """
+    try:
+        dedup.sync_from_history()
+    except Exception:  # noqa: BLE001
+        pass
+    avoid = dedup.used_titles(kind) + [t for t in (extra_avoid or []) if t]
+    # 兜底分用 inf 起步：否则完全相同的标题相似度恰好 1.0，
+    # 会被 "score < best_score" 挡掉，导致三轮全撞题时一版都没留下、直接返回 None。
+    best, best_who, best_score = None, None, float("inf")
+    for i in range(max(1, tries)):
+        r, _n = ai_gen.generate_with_retry(lambda: fn(recent_topics=avoid), tries=retry)
+        if not r:
+            continue
+        items = r if isinstance(r, list) else [r]
+        titles = [x.get("t", "") for x in items if isinstance(x, dict)]
+        conflict, who, score = dedup.batch_conflict(kind, titles)
+        if not conflict:
+            dedup.record(kind, titles)
+            return r, i + 1, None
+        # 撞题：把这批标题加进 avoid 再试一次；同时留下最不相似的一版兜底
+        avoid = avoid + [t for t in titles if t]
+        log_run("dedup {0} 第 {1} 轮撞题「{2}」相似度 {3:.0%}".format(kind, i + 1, who, score))
+        if score < best_score:
+            best, best_who, best_score = r, who, score
+    if best is not None:
+        dedup.record(kind, [x.get("t", "") for x in (best if isinstance(best, list) else [best])])
+        return best, tries, "与「{0}」相似度 {1:.0%}（已尽力去重）".format(best_who, best_score)
+    return None, tries, None
 
 
 def _ai_status_base(enabled):
@@ -286,16 +347,20 @@ def generate_today(force=False):
     ai_expression = None
     ai_status = _ai_status_base(ai_gen.enabled())
     if ai_gen.enabled():
+        _remember_current_ai()
         try:
-            ai_main, tries = ai_gen.generate_with_retry(
-                lambda: ai_gen.generate_lesson(
-                    main_cat=lesson.get("main_cat"),
-                    recent_topics=_recent_lesson_topics(days=7),
+            ai_main, tries, note = _ai_dedup_gen(
+                "lesson",
+                lambda recent_topics=None: ai_gen.generate_lesson(
+                    main_cat=lesson.get("main_cat"), recent_topics=recent_topics
                 ),
                 tries=2,
+                extra_avoid=_recent_lesson_topics(days=7),
             )
             ai_status["lesson"] = bool(ai_main and isinstance(ai_main, dict) and ai_main.get("t"))
             ai_status["lesson_tries"] = tries
+            if note:
+                ai_status["dedup_lesson"] = note
             if ai_status["lesson"]:
                 # AI 返回 t/s/b/links，映射为 GUI 主课渲染结构 title/sub/body
                 lesson["main"] = {
@@ -312,21 +377,25 @@ def generate_today(force=False):
             ai_status["error"] = "lesson: {0}".format(e)
         # 思辨 / 表达各自独立重试，互不牵连（以前一次失败会连坐两个模块）
         try:
-            ai_thinking, tries = ai_gen.generate_with_retry(
-                lambda: ai_gen.generate_thinking(recent_topics=_recent_ai_titles("thinking")),
-                tries=3,
+            ai_thinking, tries, note = _ai_dedup_gen(
+                "thinking", ai_gen.generate_thinking, tries=3,
+                extra_avoid=_recent_ai_titles("thinking"),
             )
             ai_status["thinking"] = bool(ai_thinking)
             ai_status["thinking_tries"] = tries
+            if note:
+                ai_status["dedup_thinking"] = note
         except Exception as e:  # noqa: BLE001
             ai_status["error"] = (ai_status.get("error") or "") + " thinking: {0}".format(e)
         try:
-            ai_expression, tries = ai_gen.generate_with_retry(
-                lambda: ai_gen.generate_expression(recent_topics=_recent_ai_titles("expression")),
-                tries=3,
+            ai_expression, tries, note = _ai_dedup_gen(
+                "expression", ai_gen.generate_expression, tries=3,
+                extra_avoid=_recent_ai_titles("expression"),
             )
             ai_status["expression"] = bool(ai_expression)
             ai_status["expression_tries"] = tries
+            if note:
+                ai_status["dedup_expression"] = note
         except Exception as e:  # noqa: BLE001
             ai_status["error"] = (ai_status.get("error") or "") + " expression: {0}".format(e)
     elif ai_status.get("error") is None:
@@ -472,17 +541,21 @@ def regenerate_ai_modules(modules=("thinking", "expression")):
     if not ai_gen.enabled():
         return payload, [], "未检测到 DEEPSEEK_API_KEY，AI 模块不可用（当前为静态库内容）"
 
+    # 先把当前显示的内容登记进查重池，保证"换新"一定换出不一样的内容
+    _remember_current_ai()
     changed = []
     errs = []
     st = payload.get("ai_status") or _ai_status_base(True)
     st["enabled"] = True
 
     if "thinking" in modules:
-        th, tries = ai_gen.generate_with_retry(
-            lambda: ai_gen.generate_thinking(recent_topics=_recent_ai_titles("thinking")),
-            tries=3,
+        th, tries, note = _ai_dedup_gen(
+            "thinking", ai_gen.generate_thinking, tries=3,
+            extra_avoid=_recent_ai_titles("thinking"),
         )
         st["thinking_tries"] = tries
+        if note:
+            st["dedup_thinking"] = note
         if th:
             payload["thinking"] = {"items": th, "ai": True}
             st["thinking"] = True
@@ -492,11 +565,13 @@ def regenerate_ai_modules(modules=("thinking", "expression")):
             errs.append("思辨题生成失败（已重试 {0} 次）".format(tries))
 
     if "expression" in modules:
-        ex, tries = ai_gen.generate_with_retry(
-            lambda: ai_gen.generate_expression(recent_topics=_recent_ai_titles("expression")),
-            tries=3,
+        ex, tries, note = _ai_dedup_gen(
+            "expression", ai_gen.generate_expression, tries=3,
+            extra_avoid=_recent_ai_titles("expression"),
         )
         st["expression_tries"] = tries
+        if note:
+            st["dedup_expression"] = note
         if ex:
             payload["expression"] = ex
             st["expression"] = True
