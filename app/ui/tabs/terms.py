@@ -93,7 +93,7 @@ class TermsTabMixin:
         head = tk.Frame(inner, bg=C.CARD)
         head.pack(fill="x", pady=(2, 4))
         tk.Label(head, text="📖 术语词典", font=F_H, bg=C.CARD, fg=section('terms')[0]).pack(side="left")
-        tk.Label(head, text="各领域专业名词与基础知识 · 系统补认知", font=F_SMALL, bg=C.CARD, fg=C.SUB).pack(
+        tk.Label(head, text="各领域专业名词与基础知识 · 系统补认知", font=F_SMALL, bg=C.CARD, fg=C.SUB, wraplength=540, justify="left").pack(
             side="left", padx=10, pady=(4, 0)
         )
         self._btn(head, "➕ 新增领域", self._ai_new_domain).pack(side="right", padx=4)

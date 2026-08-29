@@ -40,7 +40,8 @@ class ExpressionTabMixin:
         head = tk.Frame(inner, bg=C.CARD)
         head.pack(fill="x", pady=(2, 4))
         tk.Label(head, text="📣 表达能力", font=F_H, bg=C.CARD, fg=section('express')[0]).pack(side="left")
-        tk.Label(head, text="结构化表达 · 即兴发言 · 演讲辩论 · 每天一课", font=F_SMALL, bg=C.CARD, fg=C.SUB).pack(
+        tk.Label(head, text="结构化表达 · 即兴发言 · 演讲辩论 · 每天一课", font=F_SMALL, bg=C.CARD, fg=C.SUB,
+                 wraplength=540, justify="left").pack(
             side="left", padx=10, pady=(4, 0)
         )
         ai_ok = bool((self.data or {}).get("expression")) and not getattr(

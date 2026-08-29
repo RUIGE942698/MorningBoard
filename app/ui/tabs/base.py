@@ -122,15 +122,19 @@ class BaseTabMixin:
         source: "ai"（AI 自由命题，绿）
                 "web_ai"（抓当日热点 + AI 加工成题，蓝）
                 "web"（纯热点议题卡，蓝）
+                bool 兼容：True 自动归一为 "ai"（早期 expression.py 误传过）
                 其它（静态题库，灰）
         """
+        # 容错：bool 自动归一到字符串 key
+        if isinstance(source, bool):
+            source = "ai" if source else None
         style = {
             "ai": ("✨ AI 今日生成", "#1E7A5A"),
             "web_ai": ("🌐 今日热点 · AI 加工成题", "#1F5FA8"),
             "web": ("🌐 网络热点议题（AI 不可用）", "#1F5FA8"),
         }.get(source, ("📚 静态题库", C.SUB))
         # 彩色徽章的底是固定色（不随主题），字必须固定白色；灰底（静态）才用主题字色
-        fg = "#FFFFFF" if source in ("ai", "web_ai", "web") else C.INK
+        fg = "#FFFFFF" if (isinstance(source, str) and source in ("ai", "web_ai", "web")) else C.INK
         return self._chip(parent, " " + style[0] + " ", style[1], fg=fg).pack(
             side="left", padx=(2, 0), pady=(4, 0)
         )

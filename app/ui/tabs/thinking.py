@@ -59,7 +59,7 @@ class ThinkingTabMixin:
         head = tk.Frame(inner, bg=C.CARD)
         head.pack(fill="x", pady=(2, 4))
         tk.Label(head, text="🧠 思辨训练", font=F_H, bg=C.CARD, fg=_tc).pack(side="left")
-        tk.Label(head, text="思维工具 · 论证对垒 · 谬误识别", font=F_SMALL, bg=C.CARD, fg=C.SUB).pack(
+        tk.Label(head, text="思维工具 · 论证对垒 · 谬误识别", font=F_SMALL, bg=C.CARD, fg=C.SUB, wraplength=540, justify="left").pack(
             side="left", padx=10, pady=(4, 0)
         )
         th = (self.data or {}).get("thinking") or {}
