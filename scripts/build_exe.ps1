@@ -9,10 +9,15 @@ $pyi  = "C:\Users\39970\.workbuddy\binaries\python\envs\pyinstaller\Scripts\pyth
 if (-not (Test-Path $pyi)) { Write-Host "PyInstaller venv not found: $pyi"; exit 1 }
 
 Set-Location $proj
-$common = @("--noconfirm", "--clean", "--onefile", "--windowed", "--icon", "tools\csgo_bg.ico",
+# 打新版本前清掉上一次的中间产物/输出，避免堆出几十 MB（历史教训：堆过 6 个目录共 ~100MB）
+foreach ($d in @("build_exe", "build_gen", "dist_exe")) {
+    if (Test-Path $d) { Remove-Item -Recurse -Force $d }
+}
+$common = @("--noconfirm", "--onefile", "--windowed", "--icon", "tools\csgo_bg.ico",
             "--add-data", "knowledge;knowledge", "--add-data", "tools;tools",
             "--add-data", "config.json;.", "--distpath", "dist_exe")
 & $pyi -m PyInstaller @common --name MorningBoard    --workpath build_exe  --specpath . morning_show.py
 & $pyi -m PyInstaller @common --name MorningBoardGen --workpath build_gen  --specpath . morning_evening.py
 
 Write-Host "Build done. Outputs in dist_exe\"
+Write-Host "Copy MorningBoard.exe & MorningBoardGen.exe to ..\MorningBoard_Windows版\ to ship."
