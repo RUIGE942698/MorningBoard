@@ -23,3 +23,9 @@ MorningBoard_*_一键安装.zip
 .idea/
 Thumbs.db
 .DS_Store
+
+# --- PyInstaller 打包产物（不入库） ---
+build_exe/
+dist_exe/
+MorningBoard.spec
+MorningBoardGen.spec

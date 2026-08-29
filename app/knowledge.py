@@ -96,24 +96,30 @@ def load_expression():
 
 
 def load_term_library():
-    """术语词典（第七模块）：遍历 knowledge/terms/*.json -> [{"domain","t","s","b","links"}, ...]"""
+    """术语词典（第七模块）：遍历内置 terms/*.json + 用户扩充 terms（打包后知识库只读，
+    扩充写到 %APPDATA%\\MorningBoard\\terms，两者合并去重，开发模式下两者同一目录）。"""
     out = []
-    d = os.path.join(config.KNOWLEDGE_DIR, "terms")
-    try:
-        files = sorted(f for f in os.listdir(d) if f.endswith(".json"))
-    except OSError:
-        return out
-    for fn in files:
+    seen = set()
+    for d in (config.TERMS_DIR, os.path.join(config.KNOWLEDGE_DIR, "terms")):
         try:
-            with open(os.path.join(d, fn), encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:  # noqa: BLE001
+            files = sorted(f for f in os.listdir(d) if f.endswith(".json"))
+        except OSError:
             continue
-        domain = data.get("domain", fn[:-5])
-        for it in data.get("items", []):
-            item = dict(it)
-            item["domain"] = domain
-            out.append(item)
+        for fn in files:
+            try:
+                with open(os.path.join(d, fn), encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:  # noqa: BLE001
+                continue
+            domain = data.get("domain", fn[:-5])
+            for it in data.get("items", []):
+                item = dict(it)
+                item["domain"] = domain
+                key = (domain, item.get("t", ""))
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(item)
     return out
 
 

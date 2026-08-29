@@ -24,6 +24,12 @@ def main():
         )
     )
     # 收集完成 -> 自动弹出展示窗口（pythonw 无控制台；已有窗口时单实例锁自动忽略）
+    if getattr(sys, "frozen", False):
+        # 打包模式：同目录的 MorningBoard.exe 就是展示窗口
+        exe = os.path.join(os.path.dirname(sys.executable), "MorningBoard.exe")
+        if os.path.exists(exe):
+            subprocess.Popen([exe])
+        return 0
     py = sys.executable
     base = os.path.dirname(py)
     pyw = os.path.join(base, "pythonw.exe")

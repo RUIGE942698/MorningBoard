@@ -8,7 +8,8 @@ from . import ai_gen, config
 
 
 def _terms_dir():
-    return os.path.join(config.KNOWLEDGE_DIR, "terms")
+    # 打包后知识库只读，术语扩充写到 %APPDATA%\\MorningBoard\\terms（开发时即 knowledge/terms）
+    return config.TERMS_DIR
 
 
 def list_domains():
