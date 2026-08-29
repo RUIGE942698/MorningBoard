@@ -56,15 +56,15 @@ class LessonTabMixin:
             )
 
         # 小卡
-        tk.Label(inner, text="今日小卡 · 点击任意一张展开阅读", font=F_SMALL, bg=CARD, fg=SUB).pack(anchor="w", pady=(2, 4))
+        tk.Label(inner, text="今日小卡 · 整张卡片都可点，点哪都能展开", font=F_SMALL, bg=CARD, fg=SUB).pack(anchor="w", pady=(2, 4))
         cards = plan.get("cards") or []
         if cards:
             cg = tk.Frame(inner, bg=CARD)
             cg.pack(fill="x")
             for i in range(3):
                 cg.grid_columnconfigure(i, weight=1, uniform="card")
-            for i, it in enumerate(cards):
-                self._render_mini_card(cg, i, it)
+            made = [self._render_mini_card(cg, i, it) for i, it in enumerate(cards)]
+            self._equalize_mini_cards(made)
 
     def _render_main_body(self, item):
         for w in self._main_card.body.winfo_children():
@@ -198,10 +198,42 @@ class LessonTabMixin:
                 card.body, text=snip, font=F_TINY, bg=CARD, fg=SUB,
                 anchor="w", justify="left", wraplength=300,
             ).pack(fill="x", padx=14, pady=(0, 2))
-        tk.Label(
-            card.body, text="第 {0}/{1} 课 · 点击展开".format(it.get("idx", 0) + 1, it.get("total", 0)),
-            font=F_TINY, bg=CARD, fg=GOLD,
-        ).pack(anchor="w", padx=14, pady=(0, 8))
+        cta = tk.Label(
+            card.body,
+            text="第 {0}/{1} 课 · 点击整张卡片展开 →".format(it.get("idx", 0) + 1, it.get("total", 0)),
+            font=F_SMALL, bg=CARD, fg=GOLD,
+        )
+        cta.pack(anchor="w", padx=14, pady=(0, 8))
+        # 悬停时 CTA 变强调色，配合卡片描边高亮，明确"这里能点"
+        cta.bind("<Enter>", lambda e: cta.configure(fg=ACCENT))
+        cta.bind("<Leave>", lambda e: cta.configure(fg=GOLD))
+        return card
+
+    def _equalize_mini_cards(self, cards, per_row=3):
+        """小卡按内容自适应高度，并把同一排拉齐。
+
+        坑：Card 是固定高度的 Canvas，内容超过卡片高度时会被**直接裁掉**
+        （底部那行"点击展开"首当其冲——看不见也点不到，用户自然觉得"按键位置不明确"）。
+        """
+        if not cards:
+            return
+        try:
+            self.root.update_idletasks()
+        except Exception:  # noqa: BLE001
+            pass
+        base = self._h(170)
+        need = []
+        for c in cards:
+            try:
+                c.body.update_idletasks()
+                need.append(max(base, c.body.winfo_reqheight() + 12))
+            except Exception:  # noqa: BLE001
+                need.append(base)
+        for r in range(0, len(cards), per_row):
+            chunk = cards[r : r + per_row]
+            h = max(need[r : r + per_row])
+            for c in chunk:
+                c.configure(height=h)
 
     def _show_main(self, item):
         if not item:

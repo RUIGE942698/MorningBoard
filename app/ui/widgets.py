@@ -34,13 +34,41 @@ class Card(tk.Canvas):
     def _resize(self, e):
         self._redraw(e.width, e.height)
     def wire(self, command=None):
-        targets = [self, self.body]
-        for t in targets:
-            if command:
-                t.configure(cursor="hand2")
-                t.bind("<Button-1>", lambda e: command())
-            t.bind("<Enter>", lambda e: self._hover(True))
-            t.bind("<Leave>", lambda e: self._hover(False))
+        """整张卡片可点击（含所有子控件）+ 悬停高亮。
+
+        坑：只绑 Canvas 和 body 是不够的。Tk 的事件绑定**不会**从父控件传给子控件，
+        标题/正文这些子 Label 铺满卡片后会把点击"吞掉"，只有边框留白能点中，
+        用户体感就是"展开按钮的位置不明确"。所以必须递归绑到所有后代。
+        另外 wire() 通常在子控件 pack 之前就调用了，故 idle 时再补绑一次。
+        """
+        self._wire_cmd = command
+        self._apply_wire()
+        self.after_idle(self._apply_wire)
+
+    def _apply_wire(self):
+        # command 为空时只做悬停高亮（点击不绑）
+        self._walk(self, getattr(self, "_wire_cmd", None))
+
+    def _walk(self, w, cmd):
+        """递归给控件树绑定点击 / 悬停（同一控件只绑一次，避免重复触发）。"""
+        try:
+            if cmd is not None:
+                try:
+                    w.configure(cursor="hand2")
+                except Exception:  # noqa: BLE001
+                    pass
+                if not getattr(w, "_mb_click", False):
+                    w.bind("<Button-1>", lambda e: cmd())
+                    w._mb_click = True
+            if not getattr(w, "_mb_hover", False):
+                w.bind("<Enter>", lambda e: self._hover(True))
+                w.bind("<Leave>", lambda e: self._hover(False))
+                w._mb_hover = True
+        except Exception:  # noqa: BLE001
+            return
+        for c in w.winfo_children():
+            self._walk(c, cmd)
+
     def _hover(self, on):
         if self._shape is not None:
             self.itemconfig(self._shape, outline=(ACCENT if on else self._outline), width=(1.6 if on else 1))
