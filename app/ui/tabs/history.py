@@ -81,6 +81,15 @@ class HistoryTabMixin:
             return
         self._render_archive_text(self.hist_text, data)
 
+    @staticmethod
+    def _src_label(src, fallback="静态"):
+        return {
+            "ai": "✨ AI 生成",
+            "web_ai": "🌐 今日热点·AI 加工",
+            "web": "🌐 网络热点",
+            "static": "📚 静态精选",
+        }.get(src, fallback)
+
     def _render_archive_text(self, txt, data):
         txt.configure(state="normal")
         txt.delete("1.0", "end")
@@ -101,7 +110,11 @@ class HistoryTabMixin:
         th = data.get("thinking") or []
         if th:
             txt.insert("end", "━" * 30 + "\n", "sep")
-            txt.insert("end", "\n【思辨训练】\n", "lab")
+            txt.insert(
+                "end",
+                "\n【思辨训练 · {0}】\n".format(self._src_label(data.get("thinking_source"))),
+                "lab",
+            )
             for i, it in enumerate(th, 1):
                 txt.insert("end", "⚖️ 思辨题 {0}：{1}\n".format(i, it.get("t", "")), "item")
                 for p in it.get("pro", []):
@@ -114,7 +127,11 @@ class HistoryTabMixin:
         ex = data.get("expression")
         if ex:
             txt.insert("end", "━" * 30 + "\n", "sep")
-            txt.insert("end", "\n【表达能力】\n", "lab")
+            txt.insert(
+                "end",
+                "\n【表达能力 · {0}】\n".format(self._src_label(data.get("expression_source"))),
+                "lab",
+            )
             txt.insert("end", ex.get("t", "") + "\n", "h")
             txt.insert("end", ex.get("s", "") + "\n", "sub")
             for p in ex.get("b", []) or []:

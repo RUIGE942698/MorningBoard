@@ -281,6 +281,28 @@ def _gen_thinking(prefer="web"):
     return None, None, (web_note or ai_note or "网络抓取与 AI 生成都失败")
 
 
+def _static_thinking_for(day):
+    """静态库当日轮换的思辨题（与界面 _thinking_pick 静态路径算法一致）。
+
+    用途：AI / 网络都没产出时，归档里也要有当天实际显示的内容，
+    保证「历史回顾」的思辨训练每天不空。
+    """
+    arr = knowledge.load_thinking()
+    if not arr:
+        return []
+    m = len(arr)
+    doy = day.timetuple().tm_yday
+    return [dict(arr[(doy - 1 + k) % m]) for k in range(min(2, m))]
+
+
+def _static_expression_for(day):
+    """静态库当日轮换的表达课（与界面 _expression_pick 静态路径算法一致）。"""
+    arr = knowledge.load_expression()
+    if not arr:
+        return None
+    return dict(arr[(day.timetuple().tm_yday - 1) % len(arr)])
+
+
 def _ai_status_base(enabled):
     """AI 各模块成败记录（写进 payload.ai_status，供界面显示"是否当日 AI 生成"）。"""
     return {
@@ -578,6 +600,14 @@ def generate_today(force=False):
         _lesson = payload.get("lesson") or {}
         _news = payload.get("news") or {}
         _funds = payload.get("funds") or {}
+        _th = payload.get("thinking") or {}
+        _ex = payload.get("expression")
+        th_items = _th.get("items") or []
+        # 归档兜底：AI/网络没产出时，把静态库当天实际轮换的内容也归档，
+        # 让思辨/表达这两个板块每天都留档（历史回顾不空）
+        archive_thinking = th_items or _static_thinking_for(today)
+        archive_expression = _ex or _static_expression_for(today)
+        th_source = _th.get("source") or ("static" if not th_items else "ai")
         archive = {
             "date": today_iso,
             "weekday": payload["weekday"],
@@ -587,8 +617,10 @@ def generate_today(force=False):
             "lesson": _lesson.get("main"),
             "lesson_cards": _lesson.get("cards", []),
             "quote": _lesson.get("quote"),
-            "thinking": (payload.get("thinking") or {}).get("items", []),
-            "expression": payload.get("expression"),
+            "thinking": archive_thinking,
+            "thinking_source": th_source,
+            "expression": archive_expression,
+            "expression_source": "ai" if _ex else "static",
             "news_headlines": [it.get("title", "") for it in (_news.get("items") or [])[:15]],
             "tech": ((_news.get("tech") or {}).get("items") or [])[:8],
             "indices": [
@@ -635,8 +667,11 @@ def _patch_archive_ai(payload):
             return
         with open(p, encoding="utf-8") as f:
             a = json.load(f)
-        a["thinking"] = (payload.get("thinking") or {}).get("items", [])
+        _th = payload.get("thinking") or {}
+        a["thinking"] = _th.get("items", [])
+        a["thinking_source"] = _th.get("source") or "ai"
         a["expression"] = payload.get("expression")
+        a["expression_source"] = "ai" if payload.get("expression") else "static"
         with open(p, "w", encoding="utf-8") as f:
             json.dump(a, f, ensure_ascii=False, indent=1)
     except Exception:  # noqa: BLE001
