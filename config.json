@@ -49,5 +49,5 @@
     "timeout_seconds": 60,
     "thinking_source": "web"
   },
-  "theme": "morandi"
+  "theme": "dark"
 }
