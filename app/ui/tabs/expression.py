@@ -44,11 +44,19 @@ class ExpressionTabMixin:
         tk.Label(head, text="结构化表达 · 即兴发言 · 演讲辩论 · 每天一课", font=F_SMALL, bg=CARD, fg=SUB).pack(
             side="left", padx=10, pady=(4, 0)
         )
+        ai_ok = bool((self.data or {}).get("expression")) and not getattr(
+            self, "_expression_random", False
+        )
+        self._ai_badge(head, ai_ok)
         self._btn(head, "🎲 换一课", self._expression_shuffle).pack(side="right")
+        self._btn(head, "✨ AI 换新", lambda: self._start_ai_regen(("expression",))).pack(
+            side="right", padx=4
+        )
         tk.Label(
             inner, text="每天一课，学完立即用今天的一个场景练一遍——表达是练出来的，不是看会的。",
             font=F_TINY, bg=CARD, fg=SUB,
         ).pack(anchor="w", pady=(0, 6))
+        self._ai_hint(inner, ai_ok)
 
         it = self._expression_pick()
         if not it:

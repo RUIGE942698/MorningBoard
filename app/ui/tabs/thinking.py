@@ -62,11 +62,19 @@ class ThinkingTabMixin:
         tk.Label(head, text="思维工具 · 论证对垒 · 谬误识别", font=F_SMALL, bg=CARD, fg=SUB).pack(
             side="left", padx=10, pady=(4, 0)
         )
+        ai_ok = bool(((self.data or {}).get("thinking") or {}).get("items")) and not getattr(
+            self, "_thinking_random", False
+        )
+        self._ai_badge(head, ai_ok)
         self._btn(head, "🎲 换一组", self._thinking_shuffle).pack(side="right")
+        self._btn(head, "✨ AI 换新", lambda: self._start_ai_regen(("thinking",))).pack(
+            side="right", padx=4
+        )
         tk.Label(
             inner, text="训练方法：先读今日工具 → 用它拆解两道思辨题 → 再识别今日逻辑谬误。答案没有标准，论证过程即收获。",
             font=F_TINY, bg=CARD, fg=SUB,
         ).pack(anchor="w", pady=(0, 6))
+        self._ai_hint(inner, ai_ok)
 
         # 1) 今日思维工具
         tool = self._tool_pick()

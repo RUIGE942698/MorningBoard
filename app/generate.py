@@ -92,6 +92,66 @@ WEEKLY_CATS = [
 ]
 
 
+def log_run(msg):
+    """把每次生成的关键结果追加到 cache/run.log（排障用：AI 是否生效一目了然）。"""
+    try:
+        config.ensure_dirs()
+        p = os.path.join(config.CACHE_DIR, "run.log")
+        line = "[{0}] {1}\n".format(dt.datetime.now().isoformat(timespec="seconds"), msg)
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(line)
+        # 只保留最近 200 行，避免无限增长
+        with open(p, encoding="utf-8") as f:
+            lines = f.readlines()
+        if len(lines) > 200:
+            with open(p, "w", encoding="utf-8") as f:
+                f.writelines(lines[-200:])
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _ai_status_base(enabled):
+    """AI 各模块成败记录（写进 payload.ai_status，供界面显示"是否当日 AI 生成"）。"""
+    return {
+        "enabled": bool(enabled),
+        "lesson": False,
+        "thinking": False,
+        "expression": False,
+        "error": None,
+    }
+
+
+def _recent_ai_titles(kind, days=14):
+    """最近 N 天归档里某模块已用过的标题（用于 AI 防重复）。
+
+    kind: "thinking"（归档里是数组） / "expression"（归档里是单个对象）
+    """
+    out = []
+    try:
+        hist_dir = os.path.join(config.CACHE_DIR, "history")
+        files = sorted(
+            (f for f in os.listdir(hist_dir) if f.endswith(".json")), reverse=True
+        )[:days] if os.path.isdir(hist_dir) else []
+        for f in files:
+            try:
+                with open(os.path.join(hist_dir, f), encoding="utf-8") as fp:
+                    data = json.load(fp)
+            except Exception:  # noqa: BLE001
+                continue
+            if kind == "thinking":
+                for it in (data.get("thinking") or []):
+                    t = ((it or {}).get("t") or "").strip()
+                    if t:
+                        out.append(t)
+            else:
+                t = ((data.get("expression") or {}).get("t") or "").strip()
+                if t:
+                    out.append(t)
+    except OSError:
+        pass
+    return out
+
+
 def _classify_weekly(title):
     for cat, keys in WEEKLY_CATS:
         if any(k in title for k in keys):
@@ -224,13 +284,19 @@ def generate_today(force=False):
     # 有 key 且成功 -> 用 AI 当日新课；无 key / 失败 -> 保留静态轮换内容
     ai_thinking = None
     ai_expression = None
+    ai_status = _ai_status_base(ai_gen.enabled())
     if ai_gen.enabled():
         try:
-            ai_main = ai_gen.generate_lesson(
-                main_cat=lesson.get("main_cat"),
-                recent_topics=_recent_lesson_topics(days=7),
+            ai_main, tries = ai_gen.generate_with_retry(
+                lambda: ai_gen.generate_lesson(
+                    main_cat=lesson.get("main_cat"),
+                    recent_topics=_recent_lesson_topics(days=7),
+                ),
+                tries=2,
             )
-            if ai_main and isinstance(ai_main, dict) and ai_main.get("t"):
+            ai_status["lesson"] = bool(ai_main and isinstance(ai_main, dict) and ai_main.get("t"))
+            ai_status["lesson_tries"] = tries
+            if ai_status["lesson"]:
                 # AI 返回 t/s/b/links，映射为 GUI 主课渲染结构 title/sub/body
                 lesson["main"] = {
                     "cat": lesson.get("main_cat", "AI 新知"),
@@ -242,11 +308,38 @@ def generate_today(force=False):
                     "links": ai_main.get("links", []),
                 }
                 lesson["ai_generated"] = True
-            ai_thinking = ai_gen.generate_thinking()
-            ai_expression = ai_gen.generate_expression()
-        except Exception:  # noqa: BLE001
-            ai_thinking = None
-            ai_expression = None
+        except Exception as e:  # noqa: BLE001
+            ai_status["error"] = "lesson: {0}".format(e)
+        # 思辨 / 表达各自独立重试，互不牵连（以前一次失败会连坐两个模块）
+        try:
+            ai_thinking, tries = ai_gen.generate_with_retry(
+                lambda: ai_gen.generate_thinking(recent_topics=_recent_ai_titles("thinking")),
+                tries=3,
+            )
+            ai_status["thinking"] = bool(ai_thinking)
+            ai_status["thinking_tries"] = tries
+        except Exception as e:  # noqa: BLE001
+            ai_status["error"] = (ai_status.get("error") or "") + " thinking: {0}".format(e)
+        try:
+            ai_expression, tries = ai_gen.generate_with_retry(
+                lambda: ai_gen.generate_expression(recent_topics=_recent_ai_titles("expression")),
+                tries=3,
+            )
+            ai_status["expression"] = bool(ai_expression)
+            ai_status["expression_tries"] = tries
+        except Exception as e:  # noqa: BLE001
+            ai_status["error"] = (ai_status.get("error") or "") + " expression: {0}".format(e)
+    elif ai_status.get("error") is None:
+        ai_status["error"] = "未配置 DEEPSEEK_API_KEY（当前使用静态知识库轮换内容）"
+    log_run(
+        "generate_today AI enabled={0} lesson={1} thinking={2} expression={3} err={4}".format(
+            ai_status["enabled"],
+            ai_status["lesson"],
+            ai_status["thinking"],
+            ai_status["expression"],
+            ai_status["error"] or "-",
+        )
+    )
 
     # 每周日附加每周总结（联播后生成，覆盖本周 7 天）
     weekly = None
@@ -287,8 +380,9 @@ def generate_today(force=False):
         },
         "weekly": weekly,
         "lesson": lesson,
-        "thinking": {"items": ai_thinking or [], "ai": ai_thinking is not None},
+        "thinking": {"items": ai_thinking or [], "ai": bool(ai_thinking)},
         "expression": ai_expression,
+        "ai_status": ai_status,
     }
     config.ensure_dirs()
     with open(config.TODAY_PATH, "w", encoding="utf-8") as f:
@@ -345,3 +439,81 @@ def generate_today(force=False):
         pass
 
     return payload, True
+
+
+def _patch_archive_ai(payload):
+    """把重新生成的 AI 内容同步进当日历史归档（保持"历史回顾"与实际一致）。"""
+    try:
+        hist_dir = os.path.join(config.CACHE_DIR, "history")
+        p = os.path.join(
+            hist_dir, (payload.get("date") or dt.date.today().isoformat()) + ".json"
+        )
+        if not os.path.exists(p):
+            return
+        with open(p, encoding="utf-8") as f:
+            a = json.load(f)
+        a["thinking"] = (payload.get("thinking") or {}).get("items", [])
+        a["expression"] = payload.get("expression")
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(a, f, ensure_ascii=False, indent=1)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def regenerate_ai_modules(modules=("thinking", "expression")):
+    """只重算 AI 模块（思辨训练 / 表达能力），不重抓新闻和基金。
+
+    用途：当天缓存里这两个模块是空的、或想立刻换一批新题时，界面上一键重生成。
+    返回 (payload, changed, error)；changed 为成功更新的模块名列表。
+    """
+    payload = _load_cache()
+    if not payload:
+        return None, [], "没有今日缓存，请先点「刷新数据」"
+    if not ai_gen.enabled():
+        return payload, [], "未检测到 DEEPSEEK_API_KEY，AI 模块不可用（当前为静态库内容）"
+
+    changed = []
+    errs = []
+    st = payload.get("ai_status") or _ai_status_base(True)
+    st["enabled"] = True
+
+    if "thinking" in modules:
+        th, tries = ai_gen.generate_with_retry(
+            lambda: ai_gen.generate_thinking(recent_topics=_recent_ai_titles("thinking")),
+            tries=3,
+        )
+        st["thinking_tries"] = tries
+        if th:
+            payload["thinking"] = {"items": th, "ai": True}
+            st["thinking"] = True
+            changed.append("思辨训练")
+        else:
+            st["thinking"] = False
+            errs.append("思辨题生成失败（已重试 {0} 次）".format(tries))
+
+    if "expression" in modules:
+        ex, tries = ai_gen.generate_with_retry(
+            lambda: ai_gen.generate_expression(recent_topics=_recent_ai_titles("expression")),
+            tries=3,
+        )
+        st["expression_tries"] = tries
+        if ex:
+            payload["expression"] = ex
+            st["expression"] = True
+            changed.append("表达能力")
+        else:
+            st["expression"] = False
+            errs.append("表达课生成失败（已重试 {0} 次）".format(tries))
+
+    payload["ai_status"] = st
+    log_run(
+        "regenerate_ai_modules {0} -> changed={1} err={2}".format(
+            "/".join(modules), changed or "无", "；".join(errs) or "-"
+        )
+    )
+    if changed:
+        config.ensure_dirs()
+        with open(config.TODAY_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        _patch_archive_ai(payload)
+    return payload, changed, "；".join(errs)

@@ -6,7 +6,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 import webbrowser
-from app import config, generate
+from app import ai_gen, config, generate
 from app.ui.theme import *
 from app.ui.widgets import *
 from .tabs.base import BaseTabMixin
@@ -73,7 +73,16 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         news_date = ((self.data or {}).get("news") or {}).get("date") or ""
         # 双保险：缓存日期不是今天，或联播日期早于昨天（如 20:00 生成任务没跑成）→ 后台刷新
         news_stale = bool(news_date) and news_date < (today - dt.timedelta(days=1)).isoformat()
-        if not self.data or self.data.get("date") != today_iso or news_stale:
+        # 三保险：AI 可用，但今日缓存里思辨/表达两块是空的（上次生成时 AI 没生效）→ 后台补生成
+        ai_missing = False
+        try:
+            if ai_gen.enabled() and self.data and self.data.get("date") == today_iso:
+                ai_missing = not ((self.data.get("thinking") or {}).get("items")) and not (
+                    self.data.get("expression")
+                )
+        except Exception:  # noqa: BLE001
+            ai_missing = False
+        if not self.data or self.data.get("date") != today_iso or news_stale or ai_missing:
             self._set_status("正在更新晨报数据…")
             self._start_refresh()
 
@@ -240,6 +249,40 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
             self.root.after(0, self._on_refreshed, payload, err)
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _start_ai_regen(self, modules):
+        """只重新生成 AI 模块（思辨/表达），不重抓新闻基金。"""
+        if self._refreshing:
+            return
+        self._refreshing = True
+        self.btn_refresh.configure(state="disabled", text="生成中…")
+        self._set_status("AI 正在生成新内容…")
+
+        def work():
+            payload, changed, error = None, [], ""
+            try:
+                payload, changed, error = generate.regenerate_ai_modules(modules)
+            except Exception as e:  # noqa: BLE001
+                error = str(e)
+            self.root.after(0, self._on_ai_regen_done, payload, changed, error)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _on_ai_regen_done(self, payload, changed, error):
+        self._refreshing = False
+        self.btn_refresh.configure(state="normal", text="刷新数据")
+        if payload:
+            self.data = payload
+            self._thinking_random = False
+            self._expression_random = False
+            self.render_all()
+        if changed:
+            msg = "已更新：" + "、".join(changed)
+            if error:
+                msg += "（" + error + "）"
+            self._set_status(msg)
+        else:
+            self._set_status(error or "AI 生成失败，仍显示静态库内容")
 
     def _on_refreshed(self, payload, err):
         self._refreshing = False

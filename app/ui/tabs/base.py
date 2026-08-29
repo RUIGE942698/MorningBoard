@@ -116,6 +116,27 @@ class BaseTabMixin:
             ).pack(fill="x", padx=18, pady=(2, 4))
         return card, body
 
+    def _ai_badge(self, parent, ok):
+        """内容来源徽标：绿=当日 AI 生成，灰=静态知识库轮换。"""
+        txt = "✨ AI 今日生成" if ok else "📚 静态题库"
+        return self._chip(parent, " " + txt + " ", "#1E7A5A" if ok else SUB).pack(
+            side="left", padx=(2, 0), pady=(4, 0)
+        )
+
+    def _ai_hint(self, parent, ok):
+        """AI 未生效时给出一句可操作提示（不再静默降级）。"""
+        if ok:
+            return
+        st = (self.data or {}).get("ai_status") or {}
+        reason = (st.get("error") or "").strip()
+        if not reason:
+            reason = "未配置 DEEPSEEK_API_KEY" if not st.get("enabled") else "AI 调用失败"
+        tk.Label(
+            parent,
+            text="⚠ 当前为静态知识库轮换内容（{0}）。点右上角「✨ AI 换新」可单独重新生成本模块。".format(reason),
+            font=F_TINY, bg="#FBF0E4", fg="#8A5A20", anchor="w", justify="left",
+        ).pack(fill="x", pady=(0, 6))
+
     def _link_chips(self, parent, links, label="延伸学习：", color=GOLD, bg="#F3EBD9", fg="#7A6530"):
         if not links:
             return
