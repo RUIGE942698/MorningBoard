@@ -67,12 +67,13 @@ _DARK = {
 }
 
 _MINT = {
-    "BG": "#EDF5F2",
-    "CARD": "#FFFFFF",
-    "CARD_HOVER": "#E4F1EB",
+    # 护眼青：整界面明显的冷绿色系（底/卡/边/强调/链接全绿），与纸感暖色拉开
+    "BG": "#E2F0E9",
+    "CARD": "#F8FCFA",
+    "CARD_HOVER": "#DCEEE4",
     "INK": "#1F2A26",
-    "SUB": "#5A6B64",
-    "LINE": "#CFE0D8",
+    "SUB": "#567068",
+    "LINE": "#A8CFBE",
     "ACCENT": "#2F7A63",
     "ACCENT_D": "#245F4D",
     "TEAL": "#3D6B7A",
@@ -82,15 +83,16 @@ _MINT = {
     "FLAT": "#5C6B66",
     "UP_TINT": "#F6E3DF",
     "DOWN_TINT": "#DCEDE5",
-    "SOFT": "#F0F7F4",
-    "SOFT_LINE": "#C8DFD5",
-    "LINK": "#1F5FA8",
+    "SOFT": "#EAF5EF",
+    "SOFT_LINE": "#9CC9B5",
+    "LINK": "#2E7D5B",
     "ON_ACCENT": "#FFFFFF",
-    "MUTED_BLUE": "#4A6B8A",
+    "MUTED_BLUE": "#2E7D5B",
 }
 
 _CONTRAST = {
-    "BG": "#FFFFFF",
+    # 高对比：浅灰底 + 白卡 + 黑框，黑白灰为主、强调只用警示红，硬朗清晰
+    "BG": "#EAEAEA",
     "CARD": "#FFFFFF",
     "CARD_HOVER": "#F0F0F0",
     "INK": "#000000",

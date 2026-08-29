@@ -29,6 +29,7 @@ build_exe/
 build_gen/
 build_*/
 dist_exe2/
+dist_exe3/
 MorningBoard*.spec
 dist_exe/
 dist_exe_old/
