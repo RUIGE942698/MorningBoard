@@ -250,18 +250,21 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _start_ai_regen(self, modules):
-        """只重新生成 AI 模块（思辨/表达），不重抓新闻基金。"""
+    def _start_ai_regen(self, modules, source="ai"):
+        """只重新生成内容模块（思辨/表达），不重抓新闻基金。
+
+        source="ai"：AI 命题；source="web"：抓当日网络热点再做内容。
+        """
         if self._refreshing:
             return
         self._refreshing = True
         self.btn_refresh.configure(state="disabled", text="生成中…")
-        self._set_status("AI 正在生成新内容…")
+        self._set_status("正在抓取网络热点…" if source == "web" else "AI 正在生成新内容…")
 
         def work():
             payload, changed, error = None, [], ""
             try:
-                payload, changed, error = generate.regenerate_ai_modules(modules)
+                payload, changed, error = generate.regenerate_ai_modules(modules, source=source)
             except Exception as e:  # noqa: BLE001
                 error = str(e)
             self.root.after(0, self._on_ai_regen_done, payload, changed, error)

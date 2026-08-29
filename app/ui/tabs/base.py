@@ -116,12 +116,37 @@ class BaseTabMixin:
             ).pack(fill="x", padx=18, pady=(2, 4))
         return card, body
 
-    def _ai_badge(self, parent, ok):
-        """内容来源徽标：绿=当日 AI 生成，灰=静态知识库轮换。"""
-        txt = "✨ AI 今日生成" if ok else "📚 静态题库"
-        return self._chip(parent, " " + txt + " ", "#1E7A5A" if ok else SUB).pack(
+    def _ai_badge(self, parent, source):
+        """内容来源徽标。
+
+        source: "ai"（AI 自由命题，绿）
+                "web_ai"（抓当日热点 + AI 加工成题，蓝）
+                "web"（纯热点议题卡，蓝）
+                其它（静态题库，灰）
+        """
+        style = {
+            "ai": ("✨ AI 今日生成", "#1E7A5A"),
+            "web_ai": ("🌐 今日热点 · AI 加工成题", "#1F5FA8"),
+            "web": ("🌐 网络热点议题（AI 不可用）", "#1F5FA8"),
+        }.get(source, ("📚 静态题库", SUB))
+        return self._chip(parent, " " + style[0] + " ", style[1]).pack(
             side="left", padx=(2, 0), pady=(4, 0)
         )
+
+    def _source_link(self, parent, item):
+        """内容有原文出处时，给一个可点的「查看原文」。"""
+        url = (item or {}).get("url")
+        if not url:
+            return
+        lab = "🔗 查看原文（{0}）".format((item or {}).get("src") or "网络")
+        lk = tk.Label(
+            parent, text=lab, font=F_TINY, bg="#EAF1F6", fg="#1F5FA8",
+            cursor="hand2", padx=6, pady=1,
+        )
+        lk.pack(anchor="w", padx=18, pady=(2, 6))
+        lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
+        lk.bind("<Enter>", lambda e: lk.configure(fg=ACCENT))
+        lk.bind("<Leave>", lambda e: lk.configure(fg="#1F5FA8"))
 
     def _ai_hint(self, parent, ok):
         """AI 未生效时给出一句可操作提示（不再静默降级）。"""
@@ -133,7 +158,7 @@ class BaseTabMixin:
             reason = "未配置 DEEPSEEK_API_KEY" if not st.get("enabled") else "AI 调用失败"
         tk.Label(
             parent,
-            text="⚠ 当前为静态知识库轮换内容（{0}）。点右上角「✨ AI 换新」可单独重新生成本模块。".format(reason),
+            text="⚠ 当前为静态知识库轮换内容（{0}）。可点右上角「✨ AI 换新」或「🌐 网上找」重新获取本模块内容。".format(reason),
             font=F_TINY, bg="#FBF0E4", fg="#8A5A20", anchor="w", justify="left",
         ).pack(fill="x", pady=(0, 6))
 

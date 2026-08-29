@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 
-from . import ai_gen, config, dedup, fetch, knowledge
+from . import ai_gen, config, dedup, fetch, knowledge, webgen
 
 
 def _content_hash(lesson):
@@ -169,6 +169,116 @@ def _ai_dedup_gen(kind, fn, tries=3, retry=2, extra_avoid=None):
         dedup.record(kind, [x.get("t", "") for x in (best if isinstance(best, list) else [best])])
         return best, tries, "与「{0}」相似度 {1:.0%}（已尽力去重）".format(best_who, best_score)
     return None, tries, None
+
+
+def _thinking_from_web():
+    """用网络热点做思辨内容。返回 (items, source, note)。
+
+    source="ai"   ：抓到热点，交给 DeepSeek 加工成完整论证题（最优）
+    source="web"  ：AI 不可用，退化成"热点议题卡"（标题 + 追问 + 原文链接）
+    失败返回 (None, None, 错误说明)。
+    """
+    try:
+        topics = webgen.fetch_hot_topics(limit=20)
+    except Exception as e:  # noqa: BLE001
+        return None, None, "热点抓取失败：{0}".format(e)
+    if not topics:
+        return None, None, "没有抓到任何热点"
+
+    if ai_gen.enabled():
+        r, _rounds, _note = _ai_dedup_gen(
+            "thinking",
+            lambda recent_topics=None: ai_gen.generate_thinking_from_topics(
+                topics, recent_topics=recent_topics
+            ),
+            tries=3,
+        )
+        if r:
+            return r, "web_ai", "基于 {0} 条当日网络热点生成".format(len(topics))
+
+    # 退化：议题卡。网页上抓不到现成的正方/反方，这里不编造论证，
+    # 只给真实议题 + 可自查的追问 + 原文链接。
+    items = []
+    for tp in topics:
+        hit, _who, _s = dedup.find_conflict("thinking", tp.get("t", ""))
+        if hit:
+            continue
+        items.append(
+            {
+                "t": tp.get("t", ""),
+                "s": "🔥 今日真实议题 · 来自{0}".format(tp.get("src", "")),
+                "pro": [],
+                "con": [],
+                "ask": [
+                    "这件事最有力的支持理由是什么？先自己说 30 秒，再点开原文核对。",
+                    "反对者最强的一条论据会是什么？",
+                    "要让结论反过来成立，需要满足什么条件？",
+                ],
+                "links": [],
+                "url": tp.get("url", ""),
+                "src": tp.get("src", ""),
+            }
+        )
+        if len(items) >= 2:
+            break
+    if not items:
+        return None, None, "抓到的热点都与近期内容重复"
+    dedup.record("thinking", [x["t"] for x in items])
+    return items, "web", "AI 不可用，已退化成热点议题卡（{0}）".format(items[0].get("src", ""))
+
+
+def _gen_thinking(prefer="web"):
+    """思辨内容的获取链：网络热点 与 AI 命题 两条路，按质量择优并互相兜底。
+
+    prefer="web"：先抓当日热点（0.5s）→ 有 AI 就加工成完整论证题（web_ai）直接用；
+                  没加工成（议题卡/抓取失败）再退到 AI 自由命题。
+    prefer="ai" ：先 AI 自由命题，失败再走网络热点。
+
+    返回 (items, source, note)：
+      web_ai —— 抓热点 + AI 加工，有完整正方反方，且每道题可溯源到当日真实事件（最优）
+      ai     —— AI 自由命题
+      web    —— AI 不可用，只有热点议题卡（标题 + 追问 + 原文链接）
+    """
+    web_items = web_src = web_note = None
+    ai_items = ai_note = None
+    ai_tries = 0
+
+    def try_web():
+        nonlocal web_items, web_src, web_note
+        try:
+            web_items, web_src, web_note = _thinking_from_web()
+        except Exception as e:  # noqa: BLE001
+            web_items, web_src, web_note = None, None, "网络热点异常：{0}".format(e)
+
+    def try_ai():
+        nonlocal ai_items, ai_note, ai_tries
+        if not ai_gen.enabled():
+            return
+        try:
+            ai_items, ai_tries, ai_note = _ai_dedup_gen(
+                "thinking", ai_gen.generate_thinking, tries=3,
+                extra_avoid=_recent_ai_titles("thinking"),
+            )
+        except Exception:  # noqa: BLE001
+            ai_items = None
+
+    if prefer == "web":
+        try_web()
+        # web_ai 已经是"有完整论证 + 可溯源"的最优解，不必再花一次 AI 调用
+        if not (web_items and web_src == "web_ai"):
+            try_ai()
+    else:
+        try_ai()
+        if not ai_items:
+            try_web()
+
+    if web_items and web_src == "web_ai":
+        return web_items, "web_ai", web_note
+    if ai_items:
+        return ai_items, "ai", ai_note
+    if web_items:
+        return web_items, "web", web_note
+    return None, None, (web_note or ai_note or "网络抓取与 AI 生成都失败")
 
 
 def _ai_status_base(enabled):
@@ -345,6 +455,7 @@ def generate_today(force=False):
     # 有 key 且成功 -> 用 AI 当日新课；无 key / 失败 -> 保留静态轮换内容
     ai_thinking = None
     ai_expression = None
+    thinking_source = None
     ai_status = _ai_status_base(ai_gen.enabled())
     if ai_gen.enabled():
         _remember_current_ai()
@@ -377,12 +488,11 @@ def generate_today(force=False):
             ai_status["error"] = "lesson: {0}".format(e)
         # 思辨 / 表达各自独立重试，互不牵连（以前一次失败会连坐两个模块）
         try:
-            ai_thinking, tries, note = _ai_dedup_gen(
-                "thinking", ai_gen.generate_thinking, tries=3,
-                extra_avoid=_recent_ai_titles("thinking"),
-            )
+            prefer = (cfg.get("ai") or {}).get("thinking_source") or "web"
+            ai_thinking, thinking_source, note = _gen_thinking(prefer=prefer)
             ai_status["thinking"] = bool(ai_thinking)
-            ai_status["thinking_tries"] = tries
+            if ai_thinking:
+                ai_status["thinking_source"] = thinking_source
             if note:
                 ai_status["dedup_thinking"] = note
         except Exception as e:  # noqa: BLE001
@@ -449,7 +559,11 @@ def generate_today(force=False):
         },
         "weekly": weekly,
         "lesson": lesson,
-        "thinking": {"items": ai_thinking or [], "ai": bool(ai_thinking)},
+        "thinking": {
+            "items": ai_thinking or [],
+            "ai": bool(ai_thinking),
+            "source": thinking_source or ("static" if not ai_thinking else "ai"),
+        },
         "expression": ai_expression,
         "ai_status": ai_status,
     }
@@ -529,10 +643,14 @@ def _patch_archive_ai(payload):
         pass
 
 
-def regenerate_ai_modules(modules=("thinking", "expression")):
-    """只重算 AI 模块（思辨训练 / 表达能力），不重抓新闻和基金。
+def regenerate_ai_modules(modules=("thinking", "expression"), source="ai"):
+    """只重算内容模块（思辨训练 / 表达能力），不重抓新闻和基金。
 
-    用途：当天缓存里这两个模块是空的、或想立刻换一批新题时，界面上一键重生成。
+    source="ai"  ：由 AI 命题（表达模块只支持这一种）
+    source="web" ：思辨模块改从网络抓当日热点再做内容
+                   —— 有 AI 就基于真实热点加工成完整论证题，
+                      没有 AI 则退化成热点议题卡（标题 + 追问 + 原文链接）
+
     返回 (payload, changed, error)；changed 为成功更新的模块名列表。
     """
     payload = _load_cache()
@@ -549,17 +667,29 @@ def regenerate_ai_modules(modules=("thinking", "expression")):
     st["enabled"] = True
 
     if "thinking" in modules:
-        th, tries, note = _ai_dedup_gen(
-            "thinking", ai_gen.generate_thinking, tries=3,
-            extra_avoid=_recent_ai_titles("thinking"),
-        )
+        th, t_src, tries, note = None, source, 0, None
+        if source == "web":
+            th, t_src, web_note = _thinking_from_web()
+            if th:
+                note = web_note
+                changed.append("思辨训练（网络热点）")
+        else:
+            th, tries, note = _ai_dedup_gen(
+                "thinking", ai_gen.generate_thinking, tries=3,
+                extra_avoid=_recent_ai_titles("thinking"),
+            )
         st["thinking_tries"] = tries
         if note:
             st["dedup_thinking"] = note
         if th:
-            payload["thinking"] = {"items": th, "ai": True}
+            payload["thinking"] = {"items": th, "ai": True, "source": t_src or "ai"}
             st["thinking"] = True
-            changed.append("思辨训练")
+            st["thinking_source"] = t_src or "ai"
+            if source != "web":
+                changed.append("思辨训练")
+        elif source == "web":
+            st["thinking"] = False
+            errs.append(web_note or "网络热点抓取失败")
         else:
             st["thinking"] = False
             errs.append("思辨题生成失败（已重试 {0} 次）".format(tries))

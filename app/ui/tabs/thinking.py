@@ -62,14 +62,16 @@ class ThinkingTabMixin:
         tk.Label(head, text="思维工具 · 论证对垒 · 谬误识别", font=F_SMALL, bg=CARD, fg=SUB).pack(
             side="left", padx=10, pady=(4, 0)
         )
-        ai_ok = bool(((self.data or {}).get("thinking") or {}).get("items")) and not getattr(
-            self, "_thinking_random", False
-        )
-        self._ai_badge(head, ai_ok)
+        th = (self.data or {}).get("thinking") or {}
+        ai_ok = bool(th.get("items")) and not getattr(self, "_thinking_random", False)
+        self._ai_badge(head, th.get("source") if ai_ok else None)
         self._btn(head, "🎲 换一组", self._thinking_shuffle).pack(side="right")
         self._btn(head, "✨ AI 换新", lambda: self._start_ai_regen(("thinking",))).pack(
             side="right", padx=4
         )
+        self._btn(
+            head, "🌐 网上找", lambda: self._start_ai_regen(("thinking",), source="web")
+        ).pack(side="right", padx=4)
         tk.Label(
             inner, text="训练方法：先读今日工具 → 用它拆解两道思辨题 → 再识别今日逻辑谬误。答案没有标准，论证过程即收获。",
             font=F_TINY, bg=CARD, fg=SUB,
@@ -107,6 +109,13 @@ class ThinkingTabMixin:
                     anchor="w", justify="left", wraplength=950,
                 ).pack(fill="x", padx=18, pady=4)
             self._link_chips(body, it.get("links", []), "延伸思考：", self.THINK_COLOR, "#F5EBDD", "#8A5A20")
+            # 溯源：标明这道题依据的当日热点，并给出原文链接
+            if it.get("ref"):
+                tk.Label(
+                    body, text="📎 依据热点：" + it["ref"], font=F_TINY, bg="#EAF1F6", fg="#1F5FA8",
+                    anchor="w", justify="left", wraplength=950,
+                ).pack(fill="x", padx=18, pady=(4, 0))
+            self._source_link(body, it)
             self._fit(card, 120)
 
         # 3) 今日谬误

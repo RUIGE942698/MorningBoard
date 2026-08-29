@@ -16,6 +16,7 @@
     "api_key_env": "DEEPSEEK_API_KEY",
     "model": "deepseek-chat",
     "base_url": "https://api.deepseek.com",
-    "timeout_seconds": 60
+    "timeout_seconds": 60,
+    "thinking_source": "web"
   }
 }

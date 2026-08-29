@@ -192,6 +192,74 @@ def generate_thinking(recent_topics=None):
     return [_strip_placeholders(x) for x in r if isinstance(x, dict)] or None
 
 
+def generate_thinking_from_topics(topics, recent_topics=None):
+    """基于当日网络热点生成思辨题。
+
+    与 generate_thinking 的区别：题目必须来自给定的真实热点（可查证、有时效），
+    而不是模型凭空想的话题。返回结构与 generate_thinking 一致，多一个
+    ref / url 字段标明依据的原始热点。
+    """
+    lines = []
+    for i, tp in enumerate((topics or [])[:16], 1):
+        lines.append("{0}. 《{1}》—— 来源：{2}".format(i, tp.get("t", ""), tp.get("src", "")))
+    if not lines:
+        return None
+    avoid = ""
+    if recent_topics:
+        avoid = "以下辩题最近已经出过，请务必换全新的议题：{0}\n".format("、".join(recent_topics[:20]))
+    prompt = (
+        "你是思辨训练教练。下面是今天中文互联网上的真实热点：\n"
+        + "\n".join(lines)
+        + "\n\n请从中挑出 2 个**最值得争论、正反双方都站得住脚**的议题，各设计 1 道思辨题。\n"
+        "硬要求：①题目必须紧扣上面这些真实事件，不许另起炉灶编话题；"
+        "②正方反方都要给出具体、可核查的论据（可引用事件里的关键事实），不许空话套话。\n"
+        + avoid
+        + "严格只输出一个 JSON 数组，包含 2 个对象（不要任何其他文字、不要 markdown 围栏）：\n"
+        '[{"t":"辩题标题（要抓人）","s":"一句话悬念引入（30字内）",'
+        '"pro":["正方观点1（具体有论据）","正方观点2","正方观点3"],'
+        '"con":["反方观点1（具体有论据）","反方观点2","反方观点3"],'
+        '"ask":["深度追问1","深度追问2","深度追问3"],'
+        '"links":["延伸名词1","延伸名词2","延伸名词3"],'
+        '"ref":"所依据的那条热点的标题"}]\n'
+        "重要：t 字段直接写真实标题，禁止出现「辩题标题」「延伸名词」这类占位词；\n"
+        "ref 只写热点标题本身，不要带书名号、不要带「来源：xx」。"
+    )
+    r = _extract_json(_chat(prompt, max_tokens=2600))
+    if isinstance(r, dict):
+        r = [r]
+    if not isinstance(r, list):
+        return None
+    # 把依据热点的原文链接带回界面（ref 与热点标题对得上才挂链接）
+    index = {}
+    for tp in topics or []:
+        if tp.get("t"):
+            index[_norm_topic(tp["t"])] = tp
+    out = []
+    for x in r:
+        if not isinstance(x, dict):
+            continue
+        item = _strip_placeholders(x)
+        ref = (item.get("ref") or "").strip()
+        tp = index.get(_norm_topic(ref))
+        if tp:
+            item["ref"] = tp.get("t", ref)
+            item["url"] = tp.get("url", "")
+            item["src"] = tp.get("src", "")
+        out.append(item)
+    return out or None
+
+
+def _norm_topic(s):
+    """热点标题归一化（比对 ref 用）：去「来源：xx」后缀、书名号、标点空白、转小写。
+
+    模型常把提示词里那一整行（《标题》—— 来源：澎湃热榜）原样抄进 ref，
+    所以这里两边都做同样的清洗再比。
+    """
+    s = re.sub(r"[\-—－]{0,2}\s*来源\s*[:：].*$", "", s or "")
+    s = re.sub(r"[《》〈〉「」『』【】\[\]\"'\u201c\u201d\u2018\u2019]+", "", s)
+    return re.sub(r"[\s\W_]+", "", s).lower()
+
+
 def generate_expression(recent_topics=None):
     """生成表达能力课。返回 {t,s,b:[...],links:[...]} 或 None。
 
