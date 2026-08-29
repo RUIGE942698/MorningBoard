@@ -26,6 +26,8 @@ Thumbs.db
 
 # --- PyInstaller 打包产物（不入库） ---
 build_exe/
+build_gen/
+build_*/
 dist_exe/
 MorningBoard.spec
 MorningBoardGen.spec
