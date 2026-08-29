@@ -329,6 +329,11 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
 
     # ============ 新闻 ============
 def main(smoke=False):
+    # 打包版首次运行：把老版本（源码目录）的历史归档/配置迁移过来
+    try:
+        config.migrate_legacy_data()
+    except Exception:  # noqa: BLE001
+        pass
     root = tk.Tk()
     MorningApp(root, smoke=smoke)
     root.mainloop()

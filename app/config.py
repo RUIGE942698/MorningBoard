@@ -86,3 +86,65 @@ def load_config():
         return merged
     except Exception:  # noqa: BLE001
         return dict(DEFAULT_CONFIG)
+
+
+def migrate_legacy_data():
+    """打包版首次运行：把老版本（源码目录）的数据迁移进 %APPDATA%\\MorningBoard。
+
+    场景：升级到 exe 版后，历史归档 / 查重池 / 配置都在源码目录，exe 里看不到。
+    合并式迁移：目标已存在的文件不覆盖（保留较新的一份），缺失的补上。
+    只认明确的两个旧位置，不乱猜路径：
+      - exe 同目录的 cache（用户把整个项目目录拷过去升级）
+      - 桌面 MorningBoard_Share\\cache（老版本固定位置）
+    """
+    if not _is_frozen():
+        return
+    data = _appdata_dir()
+    target_cache = os.path.join(data, "cache")
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    candidates = []
+    for d in (
+        os.path.join(exe_dir, "cache"),
+        os.path.join(os.path.expanduser("~"), "Desktop", "MorningBoard_Share", "cache"),
+    ):
+        if os.path.isdir(d) and os.path.exists(os.path.join(d, "today.json")):
+            candidates.append(d)
+    if not candidates:
+        return
+    try:
+        import shutil
+        os.makedirs(target_cache, exist_ok=True)
+        moved = []
+        for src in candidates:
+            for name in ("history", "raw"):
+                s = os.path.join(src, name)
+                t = os.path.join(target_cache, name)
+                if os.path.isdir(s) and not os.path.isdir(t):
+                    shutil.copytree(s, t)
+                    moved.append(name)
+            for name in ("today.json", "ai_used.json", "run.log"):
+                s = os.path.join(src, name)
+                t = os.path.join(target_cache, name)
+                if os.path.isfile(s) and not os.path.exists(t):
+                    shutil.copy2(s, t)
+                    moved.append(name)
+        if not os.path.exists(CONFIG_PATH):
+            for src_cfg in (
+                os.path.join(exe_dir, "config.json"),
+                os.path.join(os.path.expanduser("~"), "Desktop", "MorningBoard_Share", "config.json"),
+            ):
+                if os.path.isfile(src_cfg):
+                    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+                    shutil.copy2(src_cfg, CONFIG_PATH)
+                    moved.append("config.json")
+                    break
+        if moved:
+            with open(os.path.join(target_cache, "migrated.log"), "a", encoding="utf-8") as f:
+                f.write("{0}: {1}\n".format(dt_now(), ",".join(moved)))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def dt_now():
+    import datetime
+    return datetime.datetime.now().isoformat(timespec="seconds")

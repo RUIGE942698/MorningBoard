@@ -14,6 +14,12 @@ from app import generate  # noqa: E402
 
 
 def main():
+    # 打包版：先把老版本数据迁移到 %APPDATA%\\MorningBoard，避免历史归档丢失
+    try:
+        from app import config
+        config.migrate_legacy_data()
+    except Exception:  # noqa: BLE001
+        pass
     payload, is_new = generate.generate_today(force=True)
     print(
         "generated: {0} news={1} funds={2} new={3}".format(
