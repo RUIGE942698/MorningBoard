@@ -50,6 +50,7 @@ DEFAULT_CONFIG = {
     ],
     "funds": ["161725", "003095", "005827", "110020", "000001"],
     "news_max_items": 30,
+    "theme": "morandi",
 }
 
 
@@ -86,6 +87,28 @@ def load_config():
         return merged
     except Exception:  # noqa: BLE001
         return dict(DEFAULT_CONFIG)
+
+
+def save_config(cfg):
+    """把配置写回 CONFIG_PATH（打包模式即 %APPDATA%\\MorningBoard\\config.json）。
+
+    与 load_config 配套：只存已知键，避免把运行态的临时字段写进文件。
+    """
+    try:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        cur = {}
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, encoding="utf-8") as f:
+                    cur = json.load(f) or {}
+            except Exception:  # noqa: BLE001
+                cur = {}
+        cur.update({k: v for k, v in (cfg or {}).items() if k in DEFAULT_CONFIG})
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cur, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def migrate_legacy_data():

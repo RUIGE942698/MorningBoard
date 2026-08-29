@@ -15,7 +15,6 @@ from app.ui.theme import *
 from app.ui.widgets import *
 class TermsTabMixin:
     # ---- terms ----
-    TERM_COLOR = "#4A6B8A"
 
     def _set_term_domain(self, d):
         self._term_domain = d
@@ -91,18 +90,18 @@ class TermsTabMixin:
             w.destroy()
 
         all_terms = knowledge.load_term_library()
-        head = tk.Frame(inner, bg=CARD)
+        head = tk.Frame(inner, bg=C.CARD)
         head.pack(fill="x", pady=(2, 4))
-        tk.Label(head, text="📖 术语词典", font=F_H, bg=CARD, fg=self.TERM_COLOR).pack(side="left")
-        tk.Label(head, text="各领域专业名词与基础知识 · 系统补认知", font=F_SMALL, bg=CARD, fg=SUB).pack(
+        tk.Label(head, text="📖 术语词典", font=F_H, bg=C.CARD, fg=section('terms')[0]).pack(side="left")
+        tk.Label(head, text="各领域专业名词与基础知识 · 系统补认知", font=F_SMALL, bg=C.CARD, fg=C.SUB).pack(
             side="left", padx=10, pady=(4, 0)
         )
         self._btn(head, "➕ 新增领域", self._ai_new_domain).pack(side="right", padx=4)
         self._btn(head, "🧠 AI 扩充", self._ai_expand_terms).pack(side="right", padx=4)
-        tk.Label(head, text="🔍", font=F_SMALL, bg=CARD).pack(side="right", padx=(0, 4))
+        tk.Label(head, text="🔍", font=F_SMALL, bg=C.CARD).pack(side="right", padx=(0, 4))
         self._term_search = tk.Entry(
-            head, font=F_SMALL, width=26, bg=CARD, fg=INK, relief="solid", bd=1,
-            highlightthickness=1, highlightbackground=LINE,
+            head, font=F_SMALL, width=26, bg=C.CARD, fg=C.INK, relief="solid", bd=1,
+            highlightthickness=1, highlightbackground=C.LINE,
         )
         self._term_search.pack(side="right")
         if self._term_query:
@@ -111,14 +110,14 @@ class TermsTabMixin:
 
         # 领域筛选 chips
         domains = sorted({t["domain"] for t in all_terms})
-        chips = tk.Frame(inner, bg=CARD)
+        chips = tk.Frame(inner, bg=C.CARD)
         chips.pack(fill="x", pady=(4, 2))
 
         def make_chip(label, domain, active):
             lb = tk.Label(
                 chips, text=" " + label + " ", font=F_SMALL,
-                bg=(self.TERM_COLOR if active else "#EDE9E0"),
-                fg=("#FFFFFF" if active else INK),
+                bg=(section('terms')[0] if active else C.SOFT),
+                fg=(C.ON_ACCENT if active else C.INK),
                 padx=9, pady=2, cursor="hand2",
             )
             return lb
@@ -147,23 +146,23 @@ class TermsTabMixin:
 
         tk.Label(
             inner, text="共 {0} 条术语{1}".format(len(terms), " · 搜索“{0}”".format(q) if q else ""),
-            font=F_TINY, bg=CARD, fg=SUB,
+            font=F_TINY, bg=C.CARD, fg=C.SUB,
         ).pack(anchor="w", pady=(2, 4))
         if limited:
             tk.Label(
                 inner, text="💡 术语较多，为流畅滚动仅展示前 100 条——点击上方领域或输入关键词查看全部",
-                font=F_TINY, bg=CARD, fg=GOLD,
+                font=F_TINY, bg=C.CARD, fg=C.GOLD,
             ).pack(anchor="w", pady=(0, 4))
 
         cards = []
         for it in terms:
-            card, body = self._lesson_card(inner, " " + it.get("domain", "") + " ", self.TERM_COLOR, it)
+            card, body = self._lesson_card(inner, " " + it.get("domain", "") + " ", section('terms')[0], it)
             for p in it.get("b", []):
                 tk.Label(
-                    body, text=p, font=F_SMALL, bg=CARD, fg=INK,
+                    body, text=p, font=F_SMALL, bg=C.CARD, fg=C.INK,
                     anchor="w", justify="left", wraplength=950,
                 ).pack(fill="x", padx=18, pady=3)
-            self._link_chips(body, it.get("links", []), "延伸学习：", self.TERM_COLOR, "#E7EDF3", "#33556B")
+            self._link_chips(body, it.get("links", []), "延伸学习：", section('terms')[0], section("terms")[1], section("terms")[2])
             cards.append(card)
         # 批量布局：一次完成几何计算，再统一按内容自适应高度（避免逐卡 update_idletasks 卡顿）
         inner.update_idletasks()

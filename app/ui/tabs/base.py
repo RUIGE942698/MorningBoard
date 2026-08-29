@@ -107,11 +107,11 @@ class BaseTabMixin:
         self._chip(body, chip_text, chip_color).pack(anchor="w", padx=18, pady=(12, 2))
         tk.Label(
             body, text=it.get("t", ""), font=("Microsoft YaHei UI", 13, "bold"),
-            bg=CARD, fg=INK, anchor="w", justify="left", wraplength=950,
+            bg=C.CARD, fg=C.INK, anchor="w", justify="left", wraplength=950,
         ).pack(fill="x", padx=18)
         if it.get("s"):
             tk.Label(
-                body, text=it.get("s", ""), font=F_SMALL, bg=CARD, fg=SUB,
+                body, text=it.get("s", ""), font=F_SMALL, bg=C.CARD, fg=C.SUB,
                 anchor="w", justify="left", wraplength=950,
             ).pack(fill="x", padx=18, pady=(2, 4))
         return card, body
@@ -128,8 +128,10 @@ class BaseTabMixin:
             "ai": ("✨ AI 今日生成", "#1E7A5A"),
             "web_ai": ("🌐 今日热点 · AI 加工成题", "#1F5FA8"),
             "web": ("🌐 网络热点议题（AI 不可用）", "#1F5FA8"),
-        }.get(source, ("📚 静态题库", SUB))
-        return self._chip(parent, " " + style[0] + " ", style[1]).pack(
+        }.get(source, ("📚 静态题库", C.SUB))
+        # 彩色徽章的底是固定色（不随主题），字必须固定白色；灰底（静态）才用主题字色
+        fg = "#FFFFFF" if source in ("ai", "web_ai", "web") else C.INK
+        return self._chip(parent, " " + style[0] + " ", style[1], fg=fg).pack(
             side="left", padx=(2, 0), pady=(4, 0)
         )
 
@@ -139,14 +141,15 @@ class BaseTabMixin:
         if not url:
             return
         lab = "🔗 查看原文（{0}）".format((item or {}).get("src") or "网络")
+        _iacc, _itint, _iink = section("info")
         lk = tk.Label(
-            parent, text=lab, font=F_TINY, bg="#EAF1F6", fg="#1F5FA8",
+            parent, text=lab, font=F_TINY, bg=_itint, fg=_iink,
             cursor="hand2", padx=6, pady=1,
         )
         lk.pack(anchor="w", padx=18, pady=(2, 6))
         lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
-        lk.bind("<Enter>", lambda e: lk.configure(fg=ACCENT))
-        lk.bind("<Leave>", lambda e: lk.configure(fg="#1F5FA8"))
+        lk.bind("<Enter>", lambda e: lk.configure(fg=C.ACCENT))
+        lk.bind("<Leave>", lambda e: lk.configure(fg=_iink))
 
     def _ai_hint(self, parent, ok):
         """AI 未生效时给出一句可操作提示（不再静默降级）。"""
@@ -159,15 +162,21 @@ class BaseTabMixin:
         tk.Label(
             parent,
             text="⚠ 当前为静态知识库轮换内容（{0}）。可点右上角「✨ AI 换新」或「🌐 网上找」重新获取本模块内容。".format(reason),
-            font=F_TINY, bg="#FBF0E4", fg="#8A5A20", anchor="w", justify="left",
+            font=F_TINY, bg=C.SOFT, fg=section("lesson")[2], anchor="w", justify="left",
         ).pack(fill="x", pady=(0, 6))
 
-    def _link_chips(self, parent, links, label="延伸学习：", color=GOLD, bg="#F3EBD9", fg="#7A6530"):
+    def _link_chips(self, parent, links, label="延伸学习：", color=None, bg=None, fg=None):
         if not links:
             return
-        lf = tk.Frame(parent, bg=CARD)
+        # 默认参数 None → 函数体内回退：color 用板块金、chip 用 lesson 板块的淡底/深字
+        color = color or C.GOLD
+        if bg is None or fg is None:
+            _b, _t, _i = section("lesson")
+            bg = bg or _t
+            fg = fg or _i
+        lf = tk.Frame(parent, bg=C.CARD)
         lf.pack(fill="x", padx=18, pady=(6, 2))
-        tk.Label(lf, text=label, font=F_SMALL, bg=CARD, fg=color).pack(side="left", pady=1)
+        tk.Label(lf, text=label, font=F_SMALL, bg=C.CARD, fg=color).pack(side="left", pady=1)
         for term in links[:6]:
             chip = tk.Label(
                 lf, text=" " + term + " ", font=F_SMALL, bg=bg, fg=fg,
@@ -202,12 +211,12 @@ class BaseTabMixin:
     @staticmethod
     def _pct_color(v):
         if v is None:
-            return SUB
+            return C.SUB
         try:
             f = float(v)
         except (TypeError, ValueError):
-            return SUB
-        return UP if f > 0 else (DOWN if f < 0 else SUB)
+            return C.SUB
+        return C.UP if f > 0 else (C.DOWN if f < 0 else C.SUB)
 
     @staticmethod
     @staticmethod

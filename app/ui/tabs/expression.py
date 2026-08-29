@@ -15,7 +15,6 @@ from app.ui.theme import *
 from app.ui.widgets import *
 class ExpressionTabMixin:
     # ---- expression ----
-    EXPR_COLOR = "#2F6B5A"
 
     def _expression_pick(self):
         # 优先用当日 AI 生成的表达课（有则用之；点过"换一课"后回到静态库）
@@ -38,10 +37,10 @@ class ExpressionTabMixin:
         for w in inner.winfo_children():
             w.destroy()
 
-        head = tk.Frame(inner, bg=CARD)
+        head = tk.Frame(inner, bg=C.CARD)
         head.pack(fill="x", pady=(2, 4))
-        tk.Label(head, text="📣 表达能力", font=F_H, bg=CARD, fg=self.EXPR_COLOR).pack(side="left")
-        tk.Label(head, text="结构化表达 · 即兴发言 · 演讲辩论 · 每天一课", font=F_SMALL, bg=CARD, fg=SUB).pack(
+        tk.Label(head, text="📣 表达能力", font=F_H, bg=C.CARD, fg=section('express')[0]).pack(side="left")
+        tk.Label(head, text="结构化表达 · 即兴发言 · 演讲辩论 · 每天一课", font=F_SMALL, bg=C.CARD, fg=C.SUB).pack(
             side="left", padx=10, pady=(4, 0)
         )
         ai_ok = bool((self.data or {}).get("expression")) and not getattr(
@@ -54,26 +53,26 @@ class ExpressionTabMixin:
         )
         tk.Label(
             inner, text="每天一课，学完立即用今天的一个场景练一遍——表达是练出来的，不是看会的。",
-            font=F_TINY, bg=CARD, fg=SUB,
+            font=F_TINY, bg=C.CARD, fg=C.SUB,
         ).pack(anchor="w", pady=(0, 6))
         self._ai_hint(inner, ai_ok)
 
         it = self._expression_pick()
         if not it:
             return
-        card, body = self._lesson_card(inner, " 📣 今日表达课 ", self.EXPR_COLOR, it)
+        card, body = self._lesson_card(inner, " 📣 今日表达课 ", section('express')[0], it)
         for p in it.get("b", []):
             if p.startswith("今天的启发"):
                 tk.Label(
-                    body, text="💡 " + p, font=F_SMALL, bg="#FBF5E7", fg="#6B5B2E",
+                    body, text="💡 " + p, font=F_SMALL, bg=C.SOFT, fg=section("lesson")[2],
                     anchor="w", justify="left", wraplength=950,
                 ).pack(fill="x", padx=18, pady=3)
             else:
                 tk.Label(
-                    body, text=p, font=F_SMALL, bg=CARD, fg=INK,
+                    body, text=p, font=F_SMALL, bg=C.CARD, fg=C.INK,
                     anchor="w", justify="left", wraplength=950,
                 ).pack(fill="x", padx=18, pady=4)
-        self._link_chips(body, it.get("links", []), "延伸学习：", self.EXPR_COLOR, "#E4EFEA", "#2E6B5A")
+        self._link_chips(body, it.get("links", []), "延伸学习：", section('express')[0], section("terms")[1], section("terms")[2])
         self._fit(card, 140)
 
     # ------------------------------------------------------------ 每周总结

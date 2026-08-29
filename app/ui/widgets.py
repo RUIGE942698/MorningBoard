@@ -11,8 +11,15 @@ def rounded_rect(c, x1, y1, x2, y2, r, **kw):
     ]
     return c.create_polygon(pts, smooth=True, **kw)
 class Card(tk.Canvas):
-    """圆角卡片：承载子内容（body 铺满卡片，内容真正左对齐），随尺寸变化自动重绘。"""
-    def __init__(self, parent, w, h, radius=14, fill=CARD, outline=LINE, bg=BG):
+    """圆角卡片：承载子内容（body 铺满卡片，内容真正左对齐），随尺寸变化自动重绘。
+
+    注意：颜色默认参数写成 None 而不是 C.CARD —— 默认参数在函数定义时求值，
+    写死的话切主题后新建的卡片仍是旧色（踩过的坑）。None 在函数体里回退到当前主题。
+    """
+    def __init__(self, parent, w, h, radius=14, fill=None, outline=None, bg=None):
+        fill = fill or C.CARD
+        outline = outline or C.LINE
+        bg = bg or C.BG
         super().__init__(parent, width=w, height=h, bg=bg, highlightthickness=0, bd=0)
         self._fill = fill
         self._radius = radius
@@ -71,10 +78,12 @@ class Card(tk.Canvas):
 
     def _hover(self, on):
         if self._shape is not None:
-            self.itemconfig(self._shape, outline=(ACCENT if on else self._outline), width=(1.6 if on else 1))
+            self.itemconfig(self._shape, outline=(C.ACCENT if on else self._outline), width=(1.6 if on else 1))
 class ScrollFrame(tk.Frame):
     """可滚动画布容器。"""
-    def __init__(self, parent, bg=CARD):
+    def __init__(self, parent, bg=None):
+        # 同 Card：默认参数 None，函数体内回退到当前主题，避免 import 时冻结
+        bg = bg or C.CARD
         super().__init__(parent, bg=bg)
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, bd=0)
         self.sb = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
@@ -93,7 +102,7 @@ def sparkline(c, w, h, values, pad=4):
     vals = [v for v in values if isinstance(v, (int, float)) and v > 0]
     if len(vals) < 2:
         return
-    color = UP if vals[-1] >= vals[0] else DOWN
+    color = C.UP if vals[-1] >= vals[0] else C.DOWN
     vmin, vmax = min(vals), max(vals)
     rng = (vmax - vmin) or 1.0
     step = (w - 2 * pad) / (len(vals) - 1)
@@ -106,7 +115,7 @@ def sparkline(c, w, h, values, pad=4):
     for p in pts:
         area += [p[0], p[1]]
     area += [pts[-1][0], h - 1]
-    c.create_polygon(area, fill=(UP_TINT if color == UP else DOWN_TINT), outline="")
+    c.create_polygon(area, fill=(C.UP_TINT if color == C.UP else C.DOWN_TINT), outline="")
     coords = [c for p in pts for c in p]
     c.create_line(*coords, fill=color, width=1.6, smooth=True)
 def classify_news(title):
