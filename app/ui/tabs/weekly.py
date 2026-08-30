@@ -29,7 +29,7 @@ class WeeklyTabMixin:
                 font=F_BASE, bg=C.CARD, fg=C.INK, justify="left",
             ).pack(padx=22, pady=4)
             tk.Label(
-                card.body, text="本周日晚 20:00 弹窗时即可看到", font=F_SMALL, bg=C.CARD, fg=C.SUB,
+                card.body, text="今晚 20:00 新闻播出后自动生成", font=F_SMALL, bg=C.CARD, fg=C.SUB,
             ).pack(padx=22, pady=(4, 20))
             return
 

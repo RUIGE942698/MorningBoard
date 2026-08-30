@@ -544,7 +544,9 @@ def generate_today(force=False):
 
     # 每周日附加每周总结（联播后生成，覆盖本周 7 天）
     weekly = None
-    if today.weekday() == 6:
+    # 只有"周日且当天联播已播出"才生成每周总结：周日凌晨/白天（今天联播未播，
+    # 新闻会回退到昨天）提前生成的话，总结缺今天，用户看到会困惑"新闻还没出怎么就有总结"。
+    if today.weekday() == 6 and (news or {}).get("date") == today_iso:
         try:
             weekly = generate_weekly(today)
         except Exception:  # noqa: BLE001
