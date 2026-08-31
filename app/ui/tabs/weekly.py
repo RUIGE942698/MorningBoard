@@ -25,7 +25,7 @@ class WeeklyTabMixin:
             card.pack(fill="x", pady=24)
             tk.Label(card.body, text="🗓 每周总结", font=F_H, bg=C.CARD, fg=C.GOLD).pack(padx=22, pady=(20, 6))
             tk.Label(
-                card.body, text="每周日《新闻联播》播完后自动生成，汇总本周六大主题：\n金融 · AI科技 · 医学 · 科学 · 国际局势 · 民生",
+                card.body, text="每周日《新闻联播》播完后自动生成，汇总本周五大主题：\n金融 · 医学 · 科学 · 国际局势 · 民生",
                 font=F_BASE, bg=C.CARD, fg=C.INK, justify="left",
             ).pack(padx=22, pady=4)
             tk.Label(
