@@ -82,9 +82,26 @@ class TermsTabMixin:
             self._set_status("新领域生成失败或与现有领域重名，请重试")
 
     def _on_term_search(self, event=None):
+        """搜索输入：防抖 + 内容不变跳过。
+
+        拼音输入法打字时每个字母都会触发 KeyRelease，若每击键都全量重渲
+        术语列表（几百张卡片）会很卡。策略：
+        1. 内容没变（IME 组合中 Entry 通常没变）→ 不重渲；
+        2. 变了 → 延迟 250ms 合并连续输入，停顿后才真正刷新一次。
+        """
+        q = (self._term_search.get() if self._term_search else "").strip()
+        if q == self._term_query:
+            return
+        if getattr(self, "_term_search_after", None):
+            try:
+                self.root.after_cancel(self._term_search_after)
+            except Exception:  # noqa: BLE001
+                pass
+        self._term_search_after = self.root.after(250, self._do_term_search)
+
+    def _do_term_search(self):
+        self._term_search_after = None
         self._term_query = (self._term_search.get() if self._term_search else "").strip()
-        # 只重渲列表区，绝不动 head/输入框——否则拼音输入法的组合状态被打断，
-        # 打"jin"时 j 一按就重建，IME 上下文没了，后面的字母进不来（=打不了字）
         self._render_terms_list()
 
     def render_terms(self):
