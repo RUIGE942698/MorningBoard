@@ -106,6 +106,10 @@ class TermsTabMixin:
         self._term_search.pack(side="right")
         if self._term_query:
             self._term_search.insert(0, self._term_query)
+            # 关键：搜索会销毁重建整个术语页，新输入框没有焦点，
+            # 会导致"第一个字能打、第二个字起全丢"。重建后抢回焦点 + 光标置尾。
+            self._term_search.icursor(len(self._term_query))
+            self._term_search.focus_set()
         self._term_search.bind("<KeyRelease>", self._on_term_search)
 
         # 领域筛选 chips
