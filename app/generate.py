@@ -393,18 +393,40 @@ def _market_tone(pcts):
     return "涨跌互现"
 
 
+def _week_titles(day):
+    """取某天联播的标题列表：优先读本地归档，读不到再联网。
+
+    本地归档（cache/history/<date>.json 的 news_headlines）比重新联网可靠得多——
+    央视网接口偶发不可达时，基于本地数据照样能汇总出每周总结。
+    """
+    p = os.path.join(config.CACHE_DIR, "history", day.isoformat() + ".json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        titles = [
+            t if isinstance(t, str) else ((t or {}).get("title") or "")
+            for t in (d.get("news_headlines") or [])
+        ]
+        titles = [t for t in titles if t]
+        if titles:
+            return titles
+    except Exception:  # noqa: BLE001
+        pass
+    news = fetch.fetch_news(day)
+    return [it.get("title", "") for it in news.get("items", [])]
+
+
 def generate_weekly(today):
     """每周总结（仅周日调用）：本周 7 天联播按六主题归档 + 8 指数周涨跌。"""
     cats = {}
     news_count = 0
     for i in range(7):
         day = today - dt.timedelta(days=i)
-        news = fetch.fetch_news(day)
-        for it in news.get("items", []):
+        for title in _week_titles(day):
             news_count += 1
-            c = _classify_weekly(it.get("title", ""))
+            c = _classify_weekly(title)
             if c:
-                cats.setdefault(c, []).append(it.get("title", ""))
+                cats.setdefault(c, []).append(title)
 
     # 指数周涨跌
     idx_week = []
@@ -546,6 +568,9 @@ def generate_today(force=False):
         try:
             weekly = generate_weekly(today)
         except Exception:  # noqa: BLE001
+            weekly = None
+        if weekly and weekly.get("news_count", 0) == 0:
+            # 一条都没汇总到（接口不可达等）→ 不写空壳，让界面走占位卡片
             weekly = None
         # 每周日自动扩充术语词典（已有领域 +3 条 ×2，并新增 1 个全新领域；失败不影响主流程）
         try:
