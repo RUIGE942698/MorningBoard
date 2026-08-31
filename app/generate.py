@@ -472,8 +472,25 @@ def generate_weekly(today):
         {"cat": c, "items": cats[c][:12]} for c, _ in WEEKLY_CATS if cats.get(c)
     ]
 
-    # 本周科技/商业要闻：量子位 RSS（36氪/机器之心接口有签名保护，暂以官网入口提供）
+    # 本周科技/商业要闻：量子位 RSS + 科技资讯
+    # 兜底：抓取失败（网络抽风）时用上次成功的缓存，科技前沿板块不会消失
+    media_cache = os.path.join(config.CACHE_DIR, "raw", "weekly_media.json")
     qbit = fetch.fetch_qbitai_week(days=7, limit=10)
+    tech = fetch.fetch_tech_feeds(limit_each=5)
+    if qbit or tech:
+        try:
+            with open(media_cache, "w", encoding="utf-8") as f:
+                json.dump({"qbitai": qbit, "tech": tech}, f, ensure_ascii=False)
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        try:
+            with open(media_cache, encoding="utf-8") as f:
+                old = json.load(f)
+            qbit = old.get("qbitai") or []
+            tech = old.get("tech") or []
+        except Exception:  # noqa: BLE001
+            pass
     return {
         "range": "本周（{0:%m-%d} ~ {1:%m-%d}）".format(today - dt.timedelta(days=6), today),
         "news_count": news_count,
@@ -481,7 +498,7 @@ def generate_weekly(today):
         "cats": ordered,
         "media": {
             "qbitai": qbit,
-            "tech": fetch.fetch_tech_feeds(limit_each=5),
+            "tech": tech,
             "sites": [
                 {"name": "InfoQ 中文", "url": "https://www.infoq.cn/"},
                 {"name": "IT 之家", "url": "https://www.ithome.com/"},
