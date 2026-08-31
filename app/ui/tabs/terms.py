@@ -18,7 +18,8 @@ class TermsTabMixin:
 
     def _set_term_domain(self, d):
         self._term_domain = d
-        self.render_terms()
+        # 只重渲列表区，不动搜索框（否则输入法被打断）
+        self._render_terms_list()
 
     def _ai_expand_terms(self):
         """AI 生成并追加当前/随机领域的新术语。"""
@@ -82,14 +83,21 @@ class TermsTabMixin:
 
     def _on_term_search(self, event=None):
         self._term_query = (self._term_search.get() if self._term_search else "").strip()
-        self.render_terms()
+        # 只重渲列表区，绝不动 head/输入框——否则拼音输入法的组合状态被打断，
+        # 打"jin"时 j 一按就重建，IME 上下文没了，后面的字母进不来（=打不了字）
+        self._render_terms_list()
 
     def render_terms(self):
+        """整页重建（首次打开 / 切主题 / AI 扩充/新增领域后）。"""
         inner = self.scroll_terms.inner
         for w in inner.winfo_children():
             w.destroy()
+        self._build_terms_head()
+        self._render_terms_list()
 
-        all_terms = knowledge.load_term_library()
+    def _build_terms_head(self):
+        """头部：标题 + 搜索框 + 操作按钮。常驻，搜索/切领域时不重建。"""
+        inner = self.scroll_terms.inner
         head = tk.Frame(inner, bg=C.CARD)
         head.pack(fill="x", pady=(2, 4))
         tk.Label(head, text="📖 术语词典", font=F_H, bg=C.CARD, fg=section('terms')[0]).pack(side="left")
@@ -106,13 +114,15 @@ class TermsTabMixin:
         self._term_search.pack(side="right")
         if self._term_query:
             self._term_search.insert(0, self._term_query)
-            # 关键：搜索会销毁重建整个术语页，新输入框没有焦点，
-            # 会导致"第一个字能打、第二个字起全丢"。重建后抢回焦点 + 光标置尾。
-            self._term_search.icursor(len(self._term_query))
-            self._term_search.focus_set()
         self._term_search.bind("<KeyRelease>", self._on_term_search)
 
-        # 领域筛选 chips
+    def _render_terms_list(self):
+        """只重渲「领域 chips + 术语列表」。head（含搜索框）保留不销毁。"""
+        inner = self.scroll_terms.inner
+        for w in inner.winfo_children()[1:]:
+            w.destroy()
+
+        all_terms = knowledge.load_term_library()
         domains = sorted({t["domain"] for t in all_terms})
         chips = tk.Frame(inner, bg=C.CARD)
         chips.pack(fill="x", pady=(4, 2))
