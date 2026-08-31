@@ -221,18 +221,20 @@ _CAT_LIGHT = {
 _WEEKLY_LIGHT = {
     "国际局势": "#33545C",
     "时政": "#9A4A3F",
-    "金融": "#A07A2E",
     "医学": "#2E6B4F",
     "科学": "#6B4E8E",
+    "AI科技": "#4A7A8A",
+    "金融": "#A07A2E",
     "民生": "#8A5A2B",
     "国内": "#5B7A3A",
 }
 _WEEKLY_DARK = {
     "国际局势": "#7FB3C4",
     "时政": "#E08A6E",
-    "金融": "#D9B45C",
     "医学": "#6FBF95",
     "科学": "#B394D6",
+    "AI科技": "#7FC2D6",
+    "金融": "#D9B45C",
     "民生": "#D69A6A",
     "国内": "#A8C98F",
 }
@@ -275,7 +277,7 @@ def _refresh_derived():
             "时政": C.ACCENT,
             "国内": C.TEAL,
             "国际": "#B394D6" if is_dark else "#6B5B8E",
-            "财经科技": C.GOLD,
+            "财经": C.GOLD,
             "快讯": "#C2A178" if is_dark else "#7A6A3A",
             "其他": C.SUB,
         }

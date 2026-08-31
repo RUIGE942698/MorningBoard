@@ -44,7 +44,7 @@ class NewsTabMixin:
         stat = Card(inner, 1000, self._h(44), radius=12, fill=C.SOFT, outline=C.LINE)
         stat.pack(fill="x", pady=(2, 8))
         parts = ["共 {0} 条".format(len(items))]
-        order = ["时政", "国内", "国际", "财经科技", "快讯"]
+        order = ["时政", "国内", "国际", "财经", "快讯"]
         for g in order:
             if g in groups:
                 parts.append("{0} {1}".format(g, len(groups[g])))
