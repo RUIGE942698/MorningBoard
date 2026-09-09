@@ -630,6 +630,14 @@ def generate_today(force=False):
             terms_updater.generate_new_domain(count=10)
         except Exception:  # noqa: BLE001
             pass
+        # 每周日自动扩充课程库：全部分类各 +3 讲（AI 新写、防重复），
+        # 用户每天每门课都翻一页（一周消耗 13×7=91 讲），扩课用于拉长循环周期，
+        # 循环本身即复习（艾宾浩斯间隔）。失败不影响主流程。
+        try:
+            from . import lesson_updater
+            lesson_updater.expand_all(per=3)
+        except Exception:  # noqa: BLE001
+            pass
 
     pcts = []
     for it in idx["indices"]:

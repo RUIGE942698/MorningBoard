@@ -57,8 +57,26 @@ def load_all():
                     lib[cat] = json.load(f)
             except Exception:  # noqa: BLE001
                 lib[cat] = []
+        # 合并 AI 扩充的课程（开发版 knowledge/knowledge_extra.json；打包版 %APPDATA%/lessons_extra.json）
+        try:
+            with open(config.LESSONS_EXTRA, encoding="utf-8") as f:
+                extra = json.load(f)
+            if isinstance(extra, dict):
+                for cat, items in extra.items():
+                    if cat in lib and isinstance(items, list):
+                        lib[cat] = lib[cat] + [
+                            it for it in items if isinstance(it, dict) and it.get("t")
+                        ]
+        except Exception:  # noqa: BLE001
+            pass
         _cache = lib
     return _cache
+
+
+def invalidate_cache():
+    """课程库扩充后调用，让下次 load_all 重新读盘。"""
+    global _cache
+    _cache = None
 
 
 def _fmt_weekday(d):

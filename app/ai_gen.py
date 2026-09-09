@@ -162,6 +162,33 @@ def generate_lesson(main_cat=None, recent_topics=None):
     return _strip_placeholders(r) if isinstance(r, dict) else None
 
 
+def generate_lesson_batch(cat, existing_titles=None, count=3):
+    """为课程库分类「cat」一次生成 count 节新课（周日自动扩课用）。
+
+    existing_titles：该分类已有课程标题（防重复）。返回 [{t,s,b,links}] 或 None。
+    """
+    avoid = ""
+    if existing_titles:
+        avoid = "以下课程已存在，务必不要重复（可同类但换全新角度与主题）：{0}\n".format(
+            "、".join(existing_titles[:60])
+        )
+    header = (
+        "你是 MorningBoard 每日学习栏目的资深内容编辑。请为「{0}」分类新写 {1} 节 5 分钟能读完的课。"
+        "要求：内容有真实深度、观点新颖、避免陈词滥调，适合普通读者；各节主题互不重复。\n"
+    ).format(cat, count) + avoid
+    json_tpl = (
+        '[{"t":"标题（含冒号副标题更佳）","s":"一句话概括（25字内）",'
+        '"b":["第1段：核心概念解释（约80字）","第2段：为什么重要/背景（约80字）",'
+        '"第3段：深度展开或独特视角（约100字）","第4段：今日可实践的一句话行动（约40字）"],'
+        '"links":["延伸名词1","延伸名词2","延伸名词3"]}]'
+    )
+    tail = "共 {0} 个对象；b 至少 4 段，每段都是完整句子；links 给 3 个可继续深入学习的名词。\n".format(count) + (
+        "重要：t 字段直接写真实标题，禁止出现「标题」「副标题」这类占位词。"
+    )
+    r = _extract_json(_chat(header + json_tpl + "\n" + tail, max_tokens=3200))
+    return r if isinstance(r, list) else None
+
+
 def generate_thinking(recent_topics=None):
     """生成思辨训练题。返回 [{t,s,pro,con,ask,links}]（2 题）或 None。
 

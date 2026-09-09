@@ -27,6 +27,7 @@ if _is_frozen():
     _DATA = _appdata_dir()
     KNOWLEDGE_DIR = os.path.join(ROOT, "knowledge")
     TERMS_DIR = os.path.join(_DATA, "terms")  # 术语扩充可写
+    LESSONS_EXTRA = os.path.join(_DATA, "lessons_extra.json")  # 课程库扩充（可写）
     CACHE_DIR = os.path.join(_DATA, "cache")
     RAW_DIR = os.path.join(CACHE_DIR, "raw")
     CONFIG_PATH = os.path.join(_DATA, "config.json")
@@ -36,6 +37,7 @@ else:
     RAW_DIR = os.path.join(CACHE_DIR, "raw")
     KNOWLEDGE_DIR = os.path.join(ROOT, "knowledge")
     TERMS_DIR = os.path.join(KNOWLEDGE_DIR, "terms")
+    LESSONS_EXTRA = os.path.join(KNOWLEDGE_DIR, "knowledge_extra.json")
     CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 TODAY_PATH = os.path.join(CACHE_DIR, "today.json")
