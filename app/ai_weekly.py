@@ -19,11 +19,16 @@
 import argparse
 import datetime as dt
 import email.utils
+import http.client
+import io
 import json
 import os
 import re
 import sys
+import threading
+import time
 import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from . import config
@@ -49,7 +54,7 @@ MAX_ITEMS = 20   # 上限：避免退化成新闻流
 #        IT之家 / InfoQ / 量子位 / AIBase / The Technium
 #   FAIL 需代理：Hacker News、Hugging Face（Tunnel 502）；Google AI Blog（SSL EOF）
 SOURCES = [
-    # ---- tier 1 一手官方
+    # ---- tier 1 一手官方（含开源仓 / 模型库，实测占对标栏目 60.7%）
     {"name": "OpenAI News", "tier": 1, "kind": "feed",
      "url": "https://openai.com/news/rss.xml"},
     {"name": "Anthropic News", "tier": 1, "kind": "html",
@@ -60,12 +65,30 @@ SOURCES = [
      "href_re": r"/news/[a-z0-9][a-z0-9\-]+/?$"},
     {"name": "NVIDIA Developer Blog", "tier": 1, "kind": "feed", "need_ai": True,
      "url": "https://developer.nvidia.com/blog/feed/"},
-    # 用 DeepMind 而非 blog.google/technology/ai：后者实测混入 DevFest、宇航员访谈等
-    # 活动宣传，不是模型发布源；DeepMind blog 才是 AlphaGenome / WeatherNext 这类首发地
     {"name": "Google DeepMind Blog", "tier": 1, "kind": "feed",
      "url": "https://deepmind.google/blog/rss.xml"},
+    # blog.google 全站 feed 噪声大（DevFest、宇航员访谈、家务技巧），但模型发布确实从这里出。
+    # 处置方式不是弃源，而是按路径收窄——实测对标栏目用的 4 条全落在下面两条路径下。
+    {"name": "Google Blog 模型与研究", "tier": 1, "kind": "feed", "need_ai": True,
+     "url": "https://blog.google/rss/",
+     "path_re": r"/(?:models-and-research|developers-tools)/"},
+    {"name": "Google Research Blog", "tier": 1, "kind": "feed", "need_ai": True,
+     "url": "https://research.google/blog/rss/"},
     {"name": "Hugging Face 新模型", "tier": 1, "kind": "hf"},
-    # ---- tier 3 聚合与媒体
+    # GitHub 周榜：「研究员开源 XXX」类条目占对标栏目约 1/4，链接直挂 GitHub / *.github.io，
+    # 是官方 feed 完全覆盖不到的一层。榜单页 700KB 且 chunked 常被截断，走 _get_capped。
+    {"name": "GitHub 周榜", "tier": 1, "kind": "gh_trending", "since": "weekly",
+     "need_ai": True},
+    # ---- tier 2 厂商产品与技术博客（实测占 26.8%，中型公司的模型首发地）
+    {"name": "Qwen 官方博客", "tier": 2, "kind": "html",
+     "url": "https://qwen.ai/blog", "href_re": r"/blog\?id=[a-z0-9.\-]{4,}"},
+    {"name": "Sakana AI", "tier": 2, "kind": "html",
+     "url": "https://sakana.ai/blog/", "href_re": r"/blog/[a-z0-9\-]{4,}"},
+    {"name": "Runway News", "tier": 2, "kind": "html",
+     "url": "https://runway.com/news", "href_re": r"/news/(?:research|changelog)/[a-z0-9\-]{4,}"},
+    {"name": "World Labs Blog", "tier": 2, "kind": "html",
+     "url": "https://www.worldlabs.ai/blog", "href_re": r"/blog/[a-z0-9\-]{3,}"},
+    # ---- tier 3 聚合与媒体（中文为主，需 AI 相关性过滤）
     {"name": "量子位", "tier": 3, "kind": "feed", "need_ai": True,
      "url": "https://www.qbitai.com/feed"},
     {"name": "IT 之家", "tier": 3, "kind": "feed", "need_ai": True,
@@ -86,9 +109,9 @@ SOURCES = [
 ]
 
 TIER_NAMES = {
-    1: "一手官方发布",
-    2: "社媒与视频",
-    3: "聚合与媒体",
+    1: "一手官方发布（含开源仓/模型库）",
+    2: "厂商产品与技术博客",
+    3: "聚合媒体与社媒",
     4: "匿名测试位（最早信号）",
     5: "观点原文",
 }
@@ -103,6 +126,9 @@ AI_KEYWORDS = [
     "Transformer", "扩散模型", "多模态", "对齐", "AGI", "机器学习", "深度学习",
     "机器人", "具身智能", "开源模型", "微调", "提示词", "Token", "阶跃星辰", "月之暗面",
     "Hugging Face", "xAI", "Chatbot", "语音大模型", "世界模型", "推理模型",
+    # 补：GitHub 仓库描述与厂商标题里的常用写法（否则周榜会被整层滤空）
+    "LLM", "VLM", "diffusion", "multimodal", "agentic", "RAG", "fine-tuning",
+    "text-to-image", "text-to-video", "speech", "TTS", "ASR", "vision-language",
 ]
 _EN_KW = [w for w in AI_KEYWORDS if w.isascii()]
 _CN_KW = [w for w in AI_KEYWORDS if not w.isascii()]
@@ -124,6 +150,11 @@ _LOW_WEIGHT = [
     "runtime", "inference runtime", "best practices", "deep dive", "under the hood",
     "教程", "上手", "入门", "技巧", "指南", "手把手", "踩坑", "报错", "安装",
     "招聘", "征文", "直播预告", "活动报名", "详解", "配件", "开售",
+    # 工程教程与客户案例：官方博客里这两类占比很高，但不是「大事」。
+    # 不加会把 NVIDIA/Microsoft 的工程博客整片带进来（实测日更窗口小的时候尤其明显）。
+    "training", "scaling", "accelerating", "deploy", "kubernetes", "docker", "slurm",
+    "cluster", "kernel", "quantiz", "pruning", "checkpoint", "pipeline",
+    "case study", "customer story", "built an", "trusts", "with end-to-end",
 ]
 
 # 判定「同一篇文章」时必须先剥掉的追踪参数
@@ -386,23 +417,98 @@ def fetch_openrouter_stealth():
 
 
 # ---------------------------------------------------------------- 抓取调度
+def _get_capped(url, timeout=25, cap=1200000, tries=3):
+    """分块读取大页面，容忍 IncompleteRead 与隧道抖动。
+
+    背景：GitHub Trending 单页 ~700KB，chunked 传输常在 read() 时抛
+    IncompleteRead，一次性 r.read() 会整个失败。改为分块 + 保留 e.partial，
+    并对代理 502 / RemoteDisconnected 做退避重试。
+    """
+    last = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": fetch.UA,
+                                                       "Accept-Language": "zh-CN,zh;q=0.9"})
+            with urllib.request.urlopen(req, timeout=timeout, context=fetch._CTX) as r:
+                buf = io.BytesIO()
+                total = 0
+                try:
+                    while total < cap:
+                        chunk = r.read(65536)
+                        if not chunk:
+                            break
+                        buf.write(chunk)
+                        total += len(chunk)
+                except http.client.IncompleteRead as e:
+                    if e.partial:
+                        buf.write(e.partial)
+                return buf.getvalue()
+        except Exception as e:  # noqa: BLE001
+            last = e
+            time.sleep(5 * (i + 1))
+    raise last
+
+
+def fetch_github_trending(since="weekly", limit=20):
+    """GitHub Trending 周榜。
+
+    「研究员开源 XXX」类条目占对标栏目约 1/4，链接直挂 GitHub / *.github.io，
+    这是官方 feed 完全覆盖不到的一层——周榜是这类信号最集中的入口。
+    """
+    body = _get_capped("https://github.com/trending?since={0}".format(since))
+    txt = body.decode("utf-8", "ignore")
+    out = []
+    for art in re.findall(r'<article[^>]*class="[^"]*Box-row[^"]*"[^>]*>(.*?)</article>', txt, re.S):
+        m = re.search(r'<h2[^>]*>\s*<a[^>]*href="/([^/"]+)/([^/"]+)"', art)
+        if not m:
+            continue
+        owner, name = m.group(1), m.group(2)
+        if owner in ("login", "sponsors", "topics"):
+            continue
+        md = re.search(r'<p[^>]*class="[^"]*col-9[^"]*"[^>]*>(.*?)</p>', art, re.S)
+        desc = fetch._clean_text(md.group(1), 160) if md else ""
+        ms = re.search(r'([\d,]+)\s*</a>\s*</span>\s*<span[^>]*>\s*([\d,]+)\s*fork', art, re.S)
+        stars = ""
+        if ms:
+            try:
+                stars = str(int(ms.group(1).replace(",", "")))
+            except ValueError:
+                stars = ""
+        out.append({
+            "title": "{0}/{1}".format(owner, name),
+            "url": "https://github.com/{0}/{1}".format(owner, name),
+            "date": None,               # 榜单页无逐条时间戳，靠新 URL 快照判新旧
+            "desc": desc,
+            "stars": stars,
+        })
+        if len(out) >= limit:
+            break
+    return out
+
+
 def fetch_source(src, days=7):
     """单个源抓取。网络抖动重试一次，任何异常都吞掉并返回 ([], 状态串)。"""
     name, kind = src["name"], src["kind"]
     need_ai = bool(src.get("need_ai"))
+    path_re = src.get("path_re")
     last_err = "unknown"
     for _ in range(2):
         try:
             if kind == "feed":
-                st, body = fetch.http_get(src["url"], timeout=15)
+                st, body = fetch.http_get(src["url"], timeout=20)
                 items = parse_feed(body, days=days) if st == 200 else []
+                if path_re:      # 全站 feed 需按路径白名单收窄（如 blog.google/rss）
+                    items = [it for it in items
+                             if re.search(path_re, urllib.parse.urlparse(it["url"]).path, re.I)]
             elif kind == "html":
-                st, body = fetch.http_get(src["url"], timeout=15)
+                st, body = fetch.http_get(src["url"], timeout=20)
                 items = parse_html_list(body, src["url"], src["href_re"]) if st == 200 else []
             elif kind == "hf":
                 items = fetch_hf_models()
             elif kind == "openrouter":
                 items = fetch_openrouter_stealth()
+            elif kind == "gh_trending":
+                items = fetch_github_trending(since=src.get("since", "weekly"))
             else:
                 return [], "未知类型"
             for it in items:
@@ -441,10 +547,11 @@ def load_snapshot():
 def _apply_quota(kept, max_items):
     """按对标栏目的层级构成分配名额，取各层最高分条目。
 
-    原栏目实测构成：一手官方 ≈50%、聚合媒体 ≈30%、匿名测试位 ≈10%、观点 ≈10%。
-    配额只约束上限，某层候选不足时剩余名额回流给其他层，不会造成空层。
+    原栏目实测构成（56 条全量盘点，2026-09-16）：一手官方 60.7%、厂商产品博客 26.8%、
+    聚合媒体与社媒 11%、匿名测试位 2%、观点 2%。配额按此比例但略作平滑，
+    避免某一层候选波动导致空层。配额只约束上限，候选不足时名额回流给其他层。
     """
-    weight = {1: 0.5, 3: 0.3, 4: 0.1, 5: 0.1, 2: 0.0}
+    weight = {1: 0.45, 2: 0.25, 3: 0.20, 4: 0.05, 5: 0.05}
     by_tier = {}
     for it in kept:
         by_tier.setdefault(it.get("tier", 9), []).append(it)
@@ -464,10 +571,15 @@ def _apply_quota(kept, max_items):
     return picked[:max_items]
 
 
-def select_items(items, days=7, snap=None, first_run=False, min_items=MIN_ITEMS, max_items=MAX_ITEMS):
+def select_items(items, days=7, snap=None, first_run=False, min_items=MIN_ITEMS,
+                 max_items=MAX_ITEMS, quota=True):
     """完整筛选链：时间窗口 / 增量 -> AI 相关性 -> 跨源判重 -> 打分 -> 保底补足。
 
     返回 (入选条目, 新 URL 表, 过滤统计)。入选条数保证落在 [min_items, max_items]。
+
+    quota=False 供日更快览用：层级配额是为周报「匹配对标栏目五层构成」设计的，
+    对 6 条的日更没有意义——它反而会把候选池按 45/25/20/5/5 切碎，掐掉真正的大事。
+    此时改为纯按重要性取池子，交回调用方自己排。
     """
     snap = snap or {}
     seen_urls = snap.get("urls") or {}
@@ -543,7 +655,14 @@ def select_items(items, days=7, snap=None, first_run=False, min_items=MIN_ITEMS,
         kept.extend(extra[:short])
 
     if len(kept) > max_items:
-        kept = _apply_quota(kept, max_items)
+        if quota:
+            kept = _apply_quota(kept, max_items)
+        else:
+            # 日更：不切层级配额，纯按重要性截取候选池（score_item 已含 tier 加成），
+            # 保证池子里是「分数最高的一批」而不是「一手源的一批」。
+            kept.sort(key=lambda x: (-x.get("score", 0), x.get("tier", 9),
+                                     x.get("date") or ""))
+            kept = kept[:max_items]
 
     return kept, new_urls, dropped
 
@@ -633,6 +752,179 @@ def write_outputs(items, status, days=7, dropped=None, target=None):
 
 
 # ---------------------------------------------------------------- CLI
+BRIEF_PATH = os.path.join(OUT_DIR, "brief.json")
+BRIEF_TTL_HOURS = 12
+
+# 日更快览的限流参数。周报和日更是两种读物：
+#   - 周报（run）：盘点一周，tier 优先合理——读者要的是「哪些一手源发了东西」
+#   - 日更（brief）：只说「最近 2 天发生了什么」，无日期的常驻条目没有资格占版面
+# 不加限流时的实测：6 条里 4 条是无日期的 GitHub 仓库，而当天最大的新闻
+# 「OpenAI 拟以超 1.2 万亿美元估值融资」（多源印证、score 9、有日期）排在第 20 位。
+BRIEF_UNDATED_RATIO = 1 / 3.0     # 无日期条目最多占日更快览的三分之一
+BRIEF_EVERGREEN_CAP = 1           # 榜单/常驻源（GitHub 周榜）每天最多露 1 条
+BRIEF_EVERGREEN_SOURCES = {"GitHub 周榜"}
+
+
+def _brief_rank_key(it):
+    """日更快览专用排序键（与周报的 tier 优先口径不同）。
+
+    依次比较：是否带日期 -> 重要性分 -> 是否多源印证 -> 源层级。
+    「是否带日期」放第一位是刻意的：无日期意味着无法证明它发生在窗口内，
+    对日更而言就是不可信条目（GitHub 周榜整周不变、newsroom 导航页常年不动）。
+    分数放第二位而不是「多源印证」：score_item 里已经给多源 +2，再多排一档
+    就是重复计权，实测会把一条 score 3 的条目顶到 score 9 的大事前面。
+    """
+    return (
+        0 if it.get("date") else 1,
+        -int(it.get("score") or 0),
+        0 if it.get("also_seen") else 1,
+        it.get("tier", 9),
+    )
+
+
+def _read_brief_cache():
+    try:
+        with open(BRIEF_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def brief(days=2, limit=6, ttl_hours=BRIEF_TTL_HOURS, workers=12, force=False, max_wait=None):
+    """每日播报用的轻量版：TTL 缓存 + 失败回退旧缓存。
+
+    每日生成不能等 21 个源跑完（慢则数分钟，会拖住晨报），所以：
+      - 缓存新鲜（< ttl_hours）直接复用，不联网
+      - 过期才重跑一次抓取
+      - 抓取失败/超时一律回退到旧缓存，绝不把异常抛给调用方
+      - max_wait 秒内没跑完就先返回旧缓存，后台线程跑完再写缓存供下次用
+    返回 (items, meta)；items 为 [{title,url,source,tier,date,score}] 的紧凑列表。
+    """
+    cached = _read_brief_cache()
+    if cached and not force:
+        try:
+            age = (dt.datetime.now()
+                   - dt.datetime.fromisoformat(cached.get("updated_at") or "")).total_seconds()
+        except Exception:  # noqa: BLE001
+            age = 1e9
+        if 0 <= age < ttl_hours * 3600:
+            meta = dict(cached.get("meta") or {})
+            meta["cached"] = True
+            return cached.get("items") or [], meta
+
+    box = {}
+
+    def _work():
+        try:
+            box["items"], box["meta"] = _fetch_brief(days, limit, workers)
+        except Exception as e:  # noqa: BLE001
+            box["error"] = "{0}: {1}".format(type(e).__name__, str(e)[:80])
+
+    if max_wait:
+        th = threading.Thread(target=_work, daemon=True)
+        th.start()
+        th.join(max_wait)
+        if th.is_alive():
+            # 还没跑完：先给旧数据，别拖住晨报；后台线程继续，跑完自动落缓存
+            meta = dict((cached or {}).get("meta") or {})
+            meta["cached"] = True
+            meta["stale"] = True
+            meta["pending"] = True
+            return (cached or {}).get("items") or [], meta
+    else:
+        _work()
+
+    if "items" in box:
+        return box["items"], box["meta"]
+    if cached:
+        meta = dict(cached.get("meta") or {})
+        meta["cached"] = True
+        meta["stale"] = True
+        meta["error"] = box.get("error")
+        return cached.get("items") or [], meta
+    return [], {"error": box.get("error"), "source_ok": 0, "source_total": len(SOURCES)}
+
+
+def _fetch_brief(days, limit, workers):
+    """真正联网的那一步：抓取 -> 筛选 -> 日更专用重排 -> 落缓存。
+
+    注意这里**不复用** select_items 的最终排序结果：它按 tier 优先排（周报口径），
+    日更若照搬会被无日期的常驻条目霸榜。所以先要一个远大于 limit 的候选池，
+    再用 _brief_rank_key 重排，最后按「有日期优先 + 无日期限流」挑满 limit 条。
+    """
+    items, status = fetch_all(days=days, workers=workers)
+    pool_size = max(limit * 4, 24)
+    kept, _new, _dropped = select_items(
+        items, days=days, snap=load_snapshot(), first_run=False,
+        min_items=1, max_items=pool_size, quota=False)
+    # 保底机制可能从窗口外池子里补条，日更场景下要剔掉真正过期的
+    floor = (dt.date.today() - dt.timedelta(days=days)).isoformat()
+    fresh = [it for it in kept if not it.get("date") or it["date"] >= floor]
+    # 日更窗口只有几天，候选池小，低分条目会「默认入选」。宁可少而精：
+    # 先按分数筛掉减分项（工程教程、客户案例），筛完不足 3 条才放开——保证不出现空页。
+    good = [it for it in fresh if (it.get("score") or 0) >= 0]
+    if len(good) >= 3:
+        fresh = good
+
+    # 昨天已经上过版面的无日期条目往后排：这类条目内容没变却每天都能重新抓到，
+    # 连着出现就是噪音（GitHub 周榜尤其明显）。只影响并列条目之间的先后，不淘汰。
+    prev_undated = set(((_read_brief_cache() or {}).get("meta") or {}).get("undated_urls") or [])
+    fresh.sort(key=lambda it: (
+        _brief_rank_key(it),
+        1 if (not it.get("date") and it.get("url") in prev_undated) else 0,
+    ))
+
+    # 限流：无日期条目总量 + 榜单源单独设上限。按已排好的顺序走一遍筛选，
+    # 被压下的进 rest 兜底（避免因限流把版面弄空）。
+    max_undated = max(1, int(limit * BRIEF_UNDATED_RATIO))
+    picked, rest, undated_n, ever_n = [], [], 0, 0
+    for it in fresh:
+        if it.get("date"):
+            picked.append(it)
+            continue
+        is_ever = it.get("source") in BRIEF_EVERGREEN_SOURCES
+        if undated_n >= max_undated or (is_ever and ever_n >= BRIEF_EVERGREEN_CAP):
+            rest.append(it)
+            continue
+        undated_n += 1
+        if is_ever:
+            ever_n += 1
+        picked.append(it)
+
+    out = [{
+        "title": it.get("title") or "",
+        "url": it.get("url") or "",
+        "source": it.get("source") or "",
+        "tier": it.get("tier") or 9,
+        "tier_name": TIER_NAMES.get(it.get("tier") or 9, ""),
+        "date": it.get("date") or "",
+        "score": it.get("score") or 0,
+        "also_seen": it.get("also_seen") or [],
+    } for it in (picked + rest)[:limit]]
+    meta = {
+        "updated_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "source_ok": sum(1 for v in status.values() if str(v).startswith("ok")),
+        "source_total": len(status),
+        "days": days,
+        "cached": False,
+        # 供下次日更做跨天降权用
+        "undated_urls": [i["url"] for i in out if not i.get("date")],
+    }
+    _write_brief_cache(out, meta)
+    return out, meta
+
+
+def _write_brief_cache(items, meta):
+    try:
+        os.makedirs(OUT_DIR, exist_ok=True)
+        with open(BRIEF_PATH, "w", encoding="utf-8") as f:
+            json.dump({"updated_at": meta.get("updated_at"), "items": items, "meta": meta},
+                      f, ensure_ascii=False, indent=1)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run(days=7, dry=False, snapshot_only=False, workers=8,
         min_items=MIN_ITEMS, max_items=MAX_ITEMS):
     snap = load_snapshot()

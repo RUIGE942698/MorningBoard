@@ -646,11 +646,30 @@ def generate_today(force=False):
             pcts.append(v)
     tone = _market_tone(pcts)
 
+    # AI 前沿速览：与「AI 周报」共用同一套抓取/去重/打分/配额算法，只是窗口收窄到 2 天。
+    # 结果带 12 小时 TTL 缓存，且最多只等 25 秒——超时先给旧数据，后台跑完再落缓存，
+    # 保证晨报生成不被网络拖住。任何异常都降级为空列表，不影响主流程。
+    ai_brief, ai_brief_meta = [], {}
+    try:
+        from . import ai_weekly
+        ai_brief, ai_brief_meta = ai_weekly.brief(days=2, limit=6, max_wait=25)
+    except Exception:  # noqa: BLE001
+        pass
+
     payload = {
         "date": today_iso,
         "weekday": "星期" + "一二三四五六日"[today.weekday()],
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "news": news,
+        "ai_brief": {
+            "items": ai_brief,
+            "updated_at": ai_brief_meta.get("updated_at") or "",
+            "cached": bool(ai_brief_meta.get("cached")),
+            "pending": bool(ai_brief_meta.get("pending")),
+            "source_ok": ai_brief_meta.get("source_ok") or 0,
+            "source_total": ai_brief_meta.get("source_total") or 0,
+            "error": ai_brief_meta.get("error") or "",
+        },
         "funds": {
             "indices": idx["indices"],
             "watchlist": funds,
