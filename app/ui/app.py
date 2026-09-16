@@ -18,9 +18,8 @@ from .tabs.thinking import ThinkingTabMixin
 from .tabs.expression import ExpressionTabMixin
 from .tabs.weekly import WeeklyTabMixin
 from .tabs.terms import TermsTabMixin
-from .tabs.aiweekly import AIWeeklyTabMixin
 
-class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, HistoryTabMixin, ThinkingTabMixin, ExpressionTabMixin, WeeklyTabMixin, TermsTabMixin, AIWeeklyTabMixin):
+class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, HistoryTabMixin, ThinkingTabMixin, ExpressionTabMixin, WeeklyTabMixin, TermsTabMixin):
     def __init__(self, root, smoke=False):
         self.root = root
         self.smoke = smoke
@@ -93,22 +92,6 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         if not self.data or self.data.get("date") != today_iso or news_stale or ai_missing:
             self._set_status("正在更新晨报数据…")
             self._start_refresh()
-
-        # AI 前沿速览：抓一轮 20+ 源要 1~2 分钟，不能拖界面。这里只做「预热」——
-        # brief() 内部起后台线程抓取，max_wait 极小让本调用立即返回；抓完自动落
-        # cache/ai_weekly/brief.json，然后回到主线程刷新页签。
-        def _warm_ai_brief():
-            try:
-                from app import ai_weekly
-                ai_weekly.brief(days=2, limit=6, max_wait=0.5)
-            except Exception:  # noqa: BLE001
-                return
-            try:
-                self.root.after(0, self._on_ai_brief_ready)
-            except Exception:  # noqa: BLE001
-                pass
-
-        threading.Thread(target=_warm_ai_brief, daemon=True).start()
 
     # ------------------------------------------------------------ 构建
     def _build_style(self):
@@ -204,7 +187,6 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         self.tab_think = tk.Frame(self.nb, bg=C.CARD)
         self.tab_express = tk.Frame(self.nb, bg=C.CARD)
         self.tab_terms = tk.Frame(self.nb, bg=C.CARD)
-        self.tab_aiweekly = tk.Frame(self.nb, bg=C.CARD)
         self.tab_history = tk.Frame(self.nb, bg=C.CARD)
         self.nb.add(self.tab_news, text="📰 新闻联播")
         self.nb.add(self.tab_funds, text="📈 基金投资")
@@ -213,7 +195,6 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         self.nb.add(self.tab_think, text="🧠 思辨训练")
         self.nb.add(self.tab_express, text="📣 表达能力")
         self.nb.add(self.tab_terms, text="📖 术语词典")
-        self.nb.add(self.tab_aiweekly, text="🤖 AI 前沿")
         self.nb.add(self.tab_history, text="📁 历史回顾")
 
         self.scroll_news = ScrollFrame(self.tab_news)
@@ -230,8 +211,6 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         self.scroll_express.pack(fill="both", expand=True, padx=14, pady=12)
         self.scroll_terms = ScrollFrame(self.tab_terms)
         self.scroll_terms.pack(fill="both", expand=True, padx=14, pady=12)
-        self.scroll_aiweekly = ScrollFrame(self.tab_aiweekly)
-        self.scroll_aiweekly.pack(fill="both", expand=True, padx=14, pady=12)
 
         self._build_history_pane()
 
@@ -293,13 +272,12 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         """切换主题时刷新窗口本体、各 tab 容器与 ScrollFrame 的底色。"""
         self.root.configure(bg=C.BG)
         for name in ("tab_news", "tab_funds", "tab_lesson", "tab_weekly",
-                     "tab_think", "tab_express", "tab_terms", "tab_aiweekly",
-                     "tab_history"):
+                     "tab_think", "tab_express", "tab_terms", "tab_history"):
             w = getattr(self, name, None)
             if w is not None:
                 w.configure(bg=C.CARD)
         for name in ("scroll_news", "scroll_funds", "scroll_lesson", "scroll_weekly",
-                     "scroll_think", "scroll_express", "scroll_terms", "scroll_aiweekly"):
+                     "scroll_think", "scroll_express", "scroll_terms"):
             sf = getattr(self, name, None)
             if sf is not None:
                 sf.configure(bg=C.CARD)
@@ -330,7 +308,7 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
             return
         self._refreshing = True
         self.btn_refresh.configure(state="disabled", text="刷新中…")
-        self._set_status("正在抓取最新数据…")
+        self._set_status("正在刷新（读取速报缓存，后台每小时自动更新）…")
 
         def work():
             err = None
@@ -418,7 +396,6 @@ class MorningApp(BaseTabMixin, NewsTabMixin, FundsTabMixin, LessonTabMixin, Hist
         self.render_thinking()
         self.render_expression()
         self.render_terms()
-        self.render_ai_weekly()
         self.render_history()
 
     # ------------------------------------------------------------ 主题

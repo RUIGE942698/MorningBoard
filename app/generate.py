@@ -500,20 +500,41 @@ def generate_weekly(today):
             "qbitai": qbit,
             "tech": tech,
             "sites": [
-                {"name": "InfoQ 中文", "url": "https://www.infoq.cn/"},
-                {"name": "IT 之家", "url": "https://www.ithome.com/"},
                 {"name": "量子位", "url": "https://www.qbitai.com/"},
+                {"name": "机器之心", "url": "https://www.jiqizhixin.com/"},
+                {"name": "InfoQ 中文", "url": "https://www.infoq.cn/"},
                 {"name": "掘金", "url": "https://juejin.cn/"},
+                {"name": "雷峰网", "url": "https://www.leiphone.com/"},
+                {"name": "极客公园", "url": "https://www.geekpark.net/"},
+                {"name": "IT 之家", "url": "https://www.ithome.com/"},
+                {"name": "Nature", "url": "https://www.nature.com/news"},
             ],
         },
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
     }
 
 
-def generate_today(force=False):
+FRONTIER_STALE_MIN = 180      # 前沿速报缓存超过该分钟数才兜底重新抓取
+
+
+def _cache_age_minutes(updated_at):
+    """缓存时间戳（%Y-%m-%d %H:%M:%S）距今多少分钟；解析失败返回 None。"""
+    try:
+        t = dt.datetime.strptime(str(updated_at or "")[:19], "%Y-%m-%d %H:%M:%S")
+        return (dt.datetime.now() - t).total_seconds() / 60.0
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def generate_today(force=False, fresh_frontier=False):
     """生成今日晨报。返回 (payload, is_new)。
 
     force=False 且当天缓存已存在时直接复用（开机零网络开销）。
+
+    fresh_frontier=True  -> 强制重新抓取前沿速报（夜间任务/CLI 用）
+    fresh_frontier=False -> 界面刷新路径：直接复用速报缓存，不联网抓取
+                            （抓取由后台 frontier_watch 每小时完成；
+                             仅当缓存缺失或超过 FRONTIER_STALE_MIN 分钟才兜底抓一次）
     """
     today = dt.date.today()
     today_iso = today.isoformat()
@@ -524,16 +545,29 @@ def generate_today(force=False):
 
     cfg = config.load_config()
     news = fetch.fetch_news()
-    # 科技前沿信源（InfoQ / IT之家 / 量子位 / 掘金 多源聚合，按内容深度优先级）
-    news["tech"] = {
-        "items": fetch.fetch_tech_feeds(limit_each=4),
-        "sites": [
-            {"name": "InfoQ 中文", "url": "https://www.infoq.cn/"},
-            {"name": "IT 之家", "url": "https://www.ithome.com/"},
-            {"name": "量子位", "url": "https://www.qbitai.com/"},
-            {"name": "掘金", "url": "https://juejin.cn/"},
-        ],
-    }
+    # 科技/科学前沿：多源 RSS + 质量评分 + AI 精选论文（失败回退旧聚合器，保证板块不消失）
+    try:
+        from app import frontier as _frontier
+        _fr = None if fresh_frontier else _frontier.load_cached()
+        if _fr is not None and not (_fr.get("items") or []):
+            _fr = None
+        if _fr is not None and not fresh_frontier:
+            _age = _cache_age_minutes(_fr.get("updated_at"))
+            if _age is not None and _age > FRONTIER_STALE_MIN:
+                _fr = None          # 后台进程可能没在跑：兜底重新抓取
+        if _fr is None:
+            _fr = _frontier.build_frontier(force=fresh_frontier)
+        news["tech"] = _frontier.to_tech_payload(_fr)
+    except Exception:  # noqa: BLE001
+        news["tech"] = {
+            "items": fetch.fetch_tech_feeds(limit_each=4),
+            "sites": [
+                {"name": "InfoQ 中文", "url": "https://www.infoq.cn/"},
+                {"name": "IT 之家", "url": "https://www.ithome.com/"},
+                {"name": "量子位", "url": "https://www.qbitai.com/"},
+                {"name": "掘金", "url": "https://juejin.cn/"},
+            ],
+        }
     idx = fetch.fetch_indices(cfg["indices"])
     funds = [_load_raw_fund(code, today_iso) for code in cfg["funds"]]
     gainers = fetch.fetch_top_gainers(5)
@@ -590,6 +624,16 @@ def generate_today(force=False):
                 "expression", ai_gen.generate_expression, tries=3,
                 extra_avoid=_recent_ai_titles("expression"),
             )
+            if ai_expression and not ai_expression.get("drill"):
+                # 兜底：AI 偶尔漏掉 drill 字段，用当天即兴题目补上，保证「今天就用出去」不空
+                try:
+                    from app import expression_coach as _coach
+                    for _b in (_coach.today_plan().get("blocks") or []):
+                        if _b.get("key") == "improv":
+                            ai_expression["drill"] = _b.get("prompt")
+                            break
+                except Exception:  # noqa: BLE001
+                    pass
             ai_status["expression"] = bool(ai_expression)
             ai_status["expression_tries"] = tries
             if note:
@@ -646,30 +690,11 @@ def generate_today(force=False):
             pcts.append(v)
     tone = _market_tone(pcts)
 
-    # AI 前沿速览：与「AI 周报」共用同一套抓取/去重/打分/配额算法，只是窗口收窄到 2 天。
-    # 结果带 12 小时 TTL 缓存，且最多只等 25 秒——超时先给旧数据，后台跑完再落缓存，
-    # 保证晨报生成不被网络拖住。任何异常都降级为空列表，不影响主流程。
-    ai_brief, ai_brief_meta = [], {}
-    try:
-        from . import ai_weekly
-        ai_brief, ai_brief_meta = ai_weekly.brief(days=2, limit=6, max_wait=25)
-    except Exception:  # noqa: BLE001
-        pass
-
     payload = {
         "date": today_iso,
         "weekday": "星期" + "一二三四五六日"[today.weekday()],
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "news": news,
-        "ai_brief": {
-            "items": ai_brief,
-            "updated_at": ai_brief_meta.get("updated_at") or "",
-            "cached": bool(ai_brief_meta.get("cached")),
-            "pending": bool(ai_brief_meta.get("pending")),
-            "source_ok": ai_brief_meta.get("source_ok") or 0,
-            "source_total": ai_brief_meta.get("source_total") or 0,
-            "error": ai_brief_meta.get("error") or "",
-        },
         "funds": {
             "indices": idx["indices"],
             "watchlist": funds,

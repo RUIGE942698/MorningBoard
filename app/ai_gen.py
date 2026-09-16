@@ -189,10 +189,25 @@ def generate_lesson_batch(cat, existing_titles=None, count=3):
     return r if isinstance(r, list) else None
 
 
+_THINK_EXTRA_FIELDS = (
+    '"type":"balance|attribution|solution|impact 之一（四类延伸题）",'
+    '"skeleton":"resource|efficiency|generation|regulation|rights|externality|'
+    'information|incentive|moral|culture 之一（议题骨架）",'
+    '"variables":["决定结论的关键变量1","关键变量2"],'
+    '"clash":"正反双方的对撞点：哪条正方正好被哪条反方打（30字内）",'
+    '"conditional":"条件化结论示例：如果前提是…那么…；关键变量是…（60字内）",'
+)
+_THINK_EXTRA_RULE = (
+    "另外必须给出：type（四类延伸题）、skeleton（议题骨架）、variables（1–2 个关键变量）、"
+    "clash（对撞点）、conditional（条件化结论示例：把「对错之争」写成「变量之争」）。\n"
+)
+
+
 def generate_thinking(recent_topics=None):
-    """生成思辨训练题。返回 [{t,s,pro,con,ask,links}]（2 题）或 None。
+    """生成思辨训练题。返回 [{t,s,pro,con,ask,links,type,skeleton,variables,clash,conditional}]（2 题）或 None。
 
     recent_topics：最近已出过的辩题（用于防重复）。
+    题目按「15 分钟限时训练」标准出：正反各 3 条弹药 + 类型 + 骨架 + 关键变量 + 对撞点 + 条件化结论。
     """
     avoid = ""
     if recent_topics:
@@ -203,15 +218,18 @@ def generate_thinking(recent_topics=None):
         "你是思辨训练教练。请设计 2 道与中国当下科技/社会热点相关的思辨题，"
         "要求能引发真实争论、双方都有强论据，两题领域要不同。\n"
         + avoid
+        + _THINK_EXTRA_RULE
         + "严格只输出一个 JSON 数组，包含 2 个对象（不要任何其他文字、不要 markdown 围栏）：\n"
         '[{"t":"辩题标题（要抓人）","s":"一句话悬念引入（30字内）",'
         '"pro":["正方观点1（具体有论据）","正方观点2","正方观点3"],'
         '"con":["反方观点1（具体有论据）","反方观点2","反方观点3"],'
         '"ask":["深度追问1","深度追问2","深度追问3"],'
+        + _THINK_EXTRA_FIELDS +
         '"links":["延伸名词1","延伸名词2","延伸名词3"]}]\n'
-        "pro/con 各 3 条、每条一句完整论证；ask 3 条追问；避免空话套话。"
+        "pro/con 各 3 条、每条一句完整论证（要有机制：谁获利、谁受损、什么条件下成立）；"
+        "ask 3 条追问；避免空话套话。"
     )
-    r = _extract_json(_chat(prompt, max_tokens=2600))
+    r = _extract_json(_chat(prompt, max_tokens=3000))
     if isinstance(r, dict):
         r = [r]
     if not isinstance(r, list):
@@ -241,17 +259,19 @@ def generate_thinking_from_topics(topics, recent_topics=None):
         "硬要求：①题目必须紧扣上面这些真实事件，不许另起炉灶编话题；"
         "②正方反方都要给出具体、可核查的论据（可引用事件里的关键事实），不许空话套话。\n"
         + avoid
+        + _THINK_EXTRA_RULE
         + "严格只输出一个 JSON 数组，包含 2 个对象（不要任何其他文字、不要 markdown 围栏）：\n"
         '[{"t":"辩题标题（要抓人）","s":"一句话悬念引入（30字内）",'
         '"pro":["正方观点1（具体有论据）","正方观点2","正方观点3"],'
         '"con":["反方观点1（具体有论据）","反方观点2","反方观点3"],'
         '"ask":["深度追问1","深度追问2","深度追问3"],'
+        + _THINK_EXTRA_FIELDS +
         '"links":["延伸名词1","延伸名词2","延伸名词3"],'
         '"ref":"所依据的那条热点的标题"}]\n'
         "重要：t 字段直接写真实标题，禁止出现「辩题标题」「延伸名词」这类占位词；\n"
         "ref 只写热点标题本身，不要带书名号、不要带「来源：xx」。"
     )
-    r = _extract_json(_chat(prompt, max_tokens=2600))
+    r = _extract_json(_chat(prompt, max_tokens=3000))
     if isinstance(r, dict):
         r = [r]
     if not isinstance(r, list):
@@ -276,6 +296,87 @@ def generate_thinking_from_topics(topics, recent_topics=None):
     return out or None
 
 
+def generate_thinking_variant(topic_title, mode="stance", pro=None, con=None,
+                              role=None):
+    """三连变式：把一道题改写成另一个版本，练条件化思维。
+
+    mode: stance 换立场（写对方的"最强版本"）/ role 换角色 / premise 换前提
+    返回 {"t","s","points":[...],"conditional","twist"} 或 None。
+    """
+    modes = {
+        "stance": ("换立场重写", "站在原结论的**对立面**写一遍，必须写出对方的「最强版本」"
+                               "（钢人原则），不许稻草人化。"),
+        "role": ("换角色重写", "换一个利益相关角色的视角（{0}）重写这道题："
+                             "他的约束条件、成本承担、时间尺度与原来的立场有何不同。"
+                             .format(role or "政府 / 企业 / 家长 / 医院 / 学生 中选一个")),
+        "premise": ("换前提重写", "把题目的关键条件改成**相反条件**，看结论怎么翻转，"
+                                "并指出决定翻转的那个变量。"),
+    }
+    name, how = modes.get(mode, modes["stance"])
+    ctx = ""
+    if pro or con:
+        ctx = ("原题的正方论据：{0}\n原题的反方论据：{1}\n").format(
+            "；".join((pro or [])[:3]), "；".join((con or [])[:3]))
+    prompt = (
+        "你是思辨训练教练，正在做一个「三连变式」练习：{0}。\n"
+        "原议题：《{1}》\n{2}"
+        "要求：{3}\n"
+        "严格只输出一个 JSON 对象（不要 markdown 围栏、不要解释）：\n"
+        '{{"t":"变式后的议题表述（25字内）","s":"一句话说明这个视角的核心约束（35字内）",'
+        '"points":["该视角下最强论点1（40-70字）","论点2","论点3"],'
+        '"conditional":"条件化结论：如果…那么…；关键变量是…（60字内）",'
+        '"twist":"这个视角与原立场最大的分歧点（30字内）"}}\n'
+        "禁止占位词，论点要具体（谁承担成本、什么条件下成立）。"
+    ).format(name, topic_title, ctx, how)
+    r = _extract_json(_chat(prompt, max_tokens=1400))
+    if isinstance(r, list) and r:
+        r = r[0]
+    if not isinstance(r, dict):
+        return None
+    out = _strip_placeholders(r)
+    out["mode"] = mode
+    out["mode_name"] = name
+    return out
+
+
+def generate_speech_script(topic, points=None, clash=None, conditional=None,
+                           seconds=120, stance=None):
+    """把一道思辨议题变成 2 分钟「说服型」口述脚本（思辨 × 表达 综合训练用）。
+
+    返回 {"stance","hook","body":[...],"rebuttal","close","delivery":[...]} 或 None。
+    """
+    ctx = []
+    if points:
+        ctx.append("可用论据：" + "；".join(str(x) for x in points[:4]))
+    if clash:
+        ctx.append("已知对撞点：" + str(clash))
+    if conditional:
+        ctx.append("条件化结论参考：" + str(conditional))
+    prompt = (
+        "你是演讲教练，要把一道思辨议题变成一段 {0} 秒的**说服型口述稿**。\n"
+        "议题：{1}\n立场：{2}\n{3}\n"
+        "要求：\n"
+        "① 开头 10 秒必须用钩子（反常识问题 / 具体场景 / 数据），不要「大家好」；\n"
+        "② 中间两条理由，每条都要有机制或证据，并给出可直接照说的原话模板；\n"
+        "③ 必须预判对方的**最强反驳**（不是稻草人）并当场化解；\n"
+        "④ 收尾用条件化结论 + 一个具体行动号召（请对方做什么）；\n"
+        "⑤ delivery 给出 3–5 条现场表达要点（停顿位置、需要重音的词、眼神/语速提醒）。\n"
+        "严格只输出一个 JSON 对象（不要 markdown 围栏、不要解释）：\n"
+        '{{"stance":"你选择的立场（20字内）","hook":"开头钩子原话（40字内）",'
+        '"body":["理由1：论点+机制+原话模板（80-120字）","理由2：同结构（80-120字）"],'
+        '"rebuttal":"预判对方最强反驳并化解（80-120字）",'
+        '"close":"条件化结论+行动号召原话（60字内）",'
+        '"delivery":["停顿：在…之后停1秒","重音：把…加重","语速/眼神提醒…"]}}\n'
+        "禁止占位词；所有内容用中文。"
+    ).format(seconds, topic, (stance or "你自己选一个最站得住的立场"), "\n".join(ctx))
+    r = _extract_json(_chat(prompt, max_tokens=1800))
+    if isinstance(r, list) and r:
+        r = r[0]
+    if not isinstance(r, dict):
+        return None
+    return _strip_placeholders(r)
+
+
 def _norm_topic(s):
     """热点标题归一化（比对 ref 用）：去「来源：xx」后缀、书名号、标点空白、转小写。
 
@@ -288,26 +389,39 @@ def _norm_topic(s):
 
 
 def generate_expression(recent_topics=None):
-    """生成表达能力课。返回 {t,s,b:[...],links:[...]} 或 None。
+    """生成表达能力课。返回 {t,s,b:[...],links:[...],module,drill} 或 None。
 
     recent_topics：最近已讲过的技巧（用于防重复）。
+    课程自动对齐「12 周路线」的当周模块（结构/说服/故事/声音肢体/即兴控场/心态）。
     """
     avoid = ""
     if recent_topics:
         avoid = "以下技巧最近已经讲过，请务必换全新的技巧：{0}\n".format("、".join(recent_topics[:20]))
+    focus = ""
+    try:
+        from app import expression_coach as _coach
+        key, name, wk, wfocus = _coach.focus_module()
+        focus = ("本周（第 {0} 周）训练重点：{1}；本课必须属于「{2}」模块（module 字段填 {3}），"
+                 "并与该重点呼应。\n").format(wk, wfocus or name, name, key)
+    except Exception:  # noqa: BLE001
+        focus = ""
     prompt = (
-        "你是表达力教练。请写一节 5 分钟的表达技巧课，主题取自沟通、演讲、写作或职场表达，"
-        "要有可立即模仿的方法。\n"
+        "你是表达力教练，目标是让学员「在很多人面前讲清楚、并说服和引领别人」。"
+        "请写一节 5 分钟的表达技巧课，要有可立即模仿的方法和可验证的练习动作。\n"
+        + focus
         + avoid
         + "严格只输出一个 JSON 对象（不要任何其他文字、不要 markdown 围栏）：\n"
         '{"t":"<真实技巧名>：<副标题>","s":"一句话说明这个技巧解决什么问题（25字内）",'
+        '"module":"structure|persuasion|story|voice|improv|mindset 之一",'
+        '"drill":"今天的练习动作（必填！40字内，可验证：录 2 分钟/读一段/写一句，含具体要求）",'
         '"b":["第1段：核心方法/步骤（约80字）","第2段：为什么有效（约80字）",'
-        '"第3段：一个具体可模仿的示例（约120字）","第4段：今天可立即练习的一句话行动（约40字）"],'
+        '"第3段：一个具体可模仿的示例（约120字，给场景和原话模板）","第4段：常见错误与纠正（约60字）"],'
         '"links":["延伸名词1","延伸名词2","延伸名词3"]}\n'
-        "b 至少 4 段；示例必须具体（给出场景和原话模板）；links 给 3 个延伸名词。\n"
+        "b 至少 4 段；示例必须具体（给出场景和原话模板）；links 给 3 个延伸名词；"
+        "drill 必须存在且今晚就能做完（缺失视为不合格）。\n"
         "重要：t 字段直接写真实内容，禁止出现「技巧名」「副标题」「延伸名词」这类占位词。"
     )
-    r = _extract_json(_chat(prompt, max_tokens=1500))
+    r = _extract_json(_chat(prompt, max_tokens=1700))
     if isinstance(r, list) and r:
         r = r[0]
     if not isinstance(r, dict):

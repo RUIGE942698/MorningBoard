@@ -49,5 +49,14 @@
     "timeout_seconds": 60,
     "thinking_source": "web"
   },
-  "theme": "dark"
+  "theme": "dark",
+  "mail": {
+    "enabled": false,
+    "smtp_host": "smtp.qq.com",
+    "smtp_port": 465,
+    "sender": "",
+    "to": "",
+    "auth_code": "",
+    "subject_prefix": "每日晨报"
+  }
 }

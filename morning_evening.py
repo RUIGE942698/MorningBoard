@@ -20,7 +20,7 @@ def main():
         config.migrate_legacy_data()
     except Exception:  # noqa: BLE001
         pass
-    payload, is_new = generate.generate_today(force=True)
+    payload, is_new = generate.generate_today(force=True, fresh_frontier=True)
     print(
         "generated: {0} news={1} funds={2} new={3}".format(
             payload.get("date"),
@@ -29,6 +29,12 @@ def main():
             is_new,
         )
     )
+    # 邮件推送（手机看晨报）：失败只记日志，绝不影响弹窗/退出码
+    try:
+        from app import mailer  # noqa: E402
+        mailer.send_daily(payload)
+    except Exception as e:  # noqa: BLE001
+        print("[mail] skipped: {0}".format(e))
     # 收集完成 -> 自动弹出展示窗口（pythonw 无控制台；已有窗口时单实例锁自动忽略）
     if getattr(sys, "frozen", False):
         # 打包模式：同目录的 MorningBoard.exe 就是展示窗口

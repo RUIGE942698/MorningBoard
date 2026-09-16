@@ -11,7 +11,7 @@ $proj = Split-Path -Parent $scriptDir                          # 项目根(Morni
 $outdir = Split-Path -Parent $proj                             # 输出目录
 $out = Join-Path $outdir "MorningBoard_分享版_一键安装.zip"
 
-$skipDirs = @("cache", "__pycache__")
+$skipDirs = @("cache", "__pycache__", ".git")
 $skipExts = @(".pyc", ".zip", ".log", ".pyo", ".lnk")
 
 Add-Type -AssemblyName System.IO.Compression
@@ -27,7 +27,26 @@ try {
         if ($skipDirs -contains $top) { continue }
         if ($skipDirs -contains $f.Directory.Name) { continue }
         if ($skipExts -contains $f.Extension.ToLower()) { continue }
-        $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $f.FullName, $rel, [System.IO.Compression.CompressionLevel]::Optimal)
+        if ($f.Name -like "*.bak*") { continue }   # 开发期备份文件不进分享包
+        # config.json 里含个人邮箱/授权码 -> 分享包内自动抹掉（保护隐私）
+        $srcPath = $f.FullName
+        if ($f.FullName -eq (Join-Path $proj "config.json")) {
+            try {
+                $cfg = Get-Content $srcPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($null -ne $cfg.mail) {
+                    $cfg.mail.enabled = $false
+                    $cfg.mail.sender = ""
+                    $cfg.mail.to = ""
+                    $cfg.mail.auth_code = ""
+                }
+                $tmp = Join-Path $env:TEMP "mb_share_config.json"
+                [System.IO.File]::WriteAllText($tmp,
+                    ($cfg | ConvertTo-Json -Depth 6),
+                    (New-Object System.Text.UTF8Encoding($false)))
+                $srcPath = $tmp
+            } catch { Write-Host "[warn] config sanitize skipped: $_" }
+        }
+        $null = [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $srcPath, $rel, [System.IO.Compression.CompressionLevel]::Optimal)
         $count++
     }
     Write-Host ("已打包 {0} 个文件" -f $count)

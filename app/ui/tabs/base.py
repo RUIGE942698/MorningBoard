@@ -45,6 +45,8 @@ class BaseTabMixin:
         m.add_command(label="百度搜索", command=lambda: webbrowser.open("https://www.baidu.com/s?wd=" + q))
         m.add_command(label="必应搜索", command=lambda: webbrowser.open("https://www.bing.com/search?q=" + q))
         m.add_command(label="B站搜索", command=lambda: webbrowser.open("https://search.bilibili.com/all?keyword=" + q))
+        m.add_command(label="知乎检索", command=lambda: webbrowser.open("https://www.zhihu.com/search?type=content&q=" + q))
+        m.add_command(label="百度学术", command=lambda: webbrowser.open("https://xueshu.baidu.com/s?wd=" + q))
         try:
             m.tk_popup(event.x_root, event.y_root)
         finally:

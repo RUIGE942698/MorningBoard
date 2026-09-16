@@ -53,6 +53,15 @@ DEFAULT_CONFIG = {
     "funds": ["161725", "003095", "005827", "110020", "000001"],
     "news_max_items": 30,
     "theme": "morandi",
+    "mail": {
+        "enabled": False,
+        "smtp_host": "smtp.qq.com",
+        "smtp_port": 465,
+        "sender": "",
+        "to": "",
+        "auth_code": "",
+        "subject_prefix": "每日晨报",
+    },
 }
 
 
